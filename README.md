@@ -1,92 +1,64 @@
-# Obsidian Sample Plugin
+# Obsidian Desktop Library
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+## Problem
+I have a lot of e-textbooks. Whenever I want to learn a new topic, I usually get an e-textbook on it and store it in an Obsidian vault so I can study and take notes on it at the same time. This causes two problems: vaults get crowded with textbooks unrelated to their actual purpose, or I end up copying textbooks between vault folders, wasting storage, since vaults in Obsidian are self-contained folders.
+## Proposed Solution
+A library plugin that syncs textbooks from anywhere on the local filesystem and renders a bookshelf view inside Obsidian, without copying files into a vault.
+## Technical Overview
+- Obsidian Plugin API
+- TypeScript
+- `pdf-parse` — extracts text from PDFs for regex scanning
+- OpenLibrary JSON API — metadata lookup by ISBN 
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+> [!Tip] Metadata lookup source
+> OpenLibrary is simpler to implement in theory becuase their REST api is unauthenticated. The gooogle books api however requires either OAuth 2.0 or an API key for access. Tradeoff here is data quality + aesthetics over simplicity.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+Since scanning arbitrary filesystem locations (and later, the shared catalog) both require raw Node filesystem access, this plugin is desktop-only by design. Set `isDesktopOnly: true` in the plugin manifest.
+### Library Configuration + Population
+The user provides one or more top-level directories for the plugin to scan for PDFs. These directories are saved in the plugin's settings so future scans don't require re-prompting. On each scan (manual or periodic), the plugin walks those directories, collects PDF paths, and passes them to the parser.
+### Library Parsing
+Each found PDF has its first 5–10 pages (not the whole document) extracted with `pdf-parse` and scanned with a regex for ISBNs. Scoping to the first few pages keeps large textbooks fast to scan and avoids false positives from ISBNs that show up later in the book (bibliographies, "also available as," other-edition callouts). When both an ISBN-10 and ISBN-13 are found, prefer the ISBN-13; otherwise take the first valid match.
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+Identified ISBNs get their metadata pulled from the OpenLibrary API and cached locally for rendering. Books that can't be identified fall back to their filename and a rendered first page as a placeholder cover.
 
-## First time developing plugins?
+For unidentified PDFs, show the user the list so they can either manually supply an ISBN or mark the file as "not a book" to exclude it from future scans. This keeps a bad regex match from silently mislabeling something forever.
+### OpenLibrary API
 
-Quick starting guide for new plugin devs:
+Metadata is pulled from OpenLibrary's ISBN lookup endpoint, keyed by the ISBNs found during parsing. At minimum this should include: title, author(s), a cover image URL, and the numeric cover ID — the fields the library view actually needs to render a shelf. Anything else OpenLibrary returns (subjects, publish date, page count) can be stored for a future detail view but isn't required for v1.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+All requests should include a `User-Agent` header identifying the plugin and a contact email. Unidentified requests to OpenLibrary's main API are limited to 1 request/second; identified ones get 3/second. On a first sync of a large library, these metadata lookups will hit that per-second limit well before the covers limit below does, so the same "batch the initial sync" approach applies here too.
 
-## Releasing new releases
+> [!Warning] Courtesy and rate limiting 
+> Open Library explicitly forbids bulk crawling of their API for book covers, and rate-limits cover access **by ISBN or other identifiers** to 100 requests per 5 minutes — accessing a cover by its numeric cover ID isn't rate-limited at all. Since the cover ID gets cached alongside the rest of a book's metadata on first lookup, this only matters for the initial sync: once cached, every later access (re-renders, reopening the library) goes through the ID-based endpoint and skips the limit entirely. For a first sync of an existing library with over a hundred books, batch the initial ISBN-based cover requests to 75 every 5 minutes.
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Persistence
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+Since the catalog needs to be visible from every vault, and Obsidian vaults are isolated from each other by design (each has its own `.obsidian` directory for settings, config, and plugins), the plugin needs a way around that isolation with as small a footprint as possible.
 
-## Adding your plugin to the community plugin list
+Rather than storing the catalog inside Obsidian's own app-level config folder (`%APPDATA%\obsidian` on Windows, etc.) — which is undocumented, internal Obsidian bookkeeping, not meant for plugin data — the catalog lives in a folder the plugin owns itself (default: something like `~/.obsidian-book-library/catalog.json`, configurable in settings). Each vault installs and enables the plugin the normal way (a one-time step, same as any other plugin); what's shared is just the data file each instance points at, not the plugin's enabled/disabled state.
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+On activation, the plugin looks for the catalog file at the configured path — uses it if found, creates it if missing — then periodically rescans and updates it.
 
-## How to use
+Writes use an atomic pattern (write to a temp file, then rename over the target) plus a version/timestamp field inside the JSON itself, so a vault only overwrites its local view when the file on disk is newer. This avoids the corruption and lost-update problems a lock file solves, without needing real cross-platform file locking, which is unreliable in Node and unnecessary at this contention level (single user, infrequent writes).
 
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+## Projected Issues
 
-## Manually installing the plugin
+| Issue                 | Description                                                                                                                                                          | Fix                                                                                                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vault isolation       | The catalog needs to be shared among vaults, but Obsidian vaults are isolated by design — each has its own `.obsidian` directory for settings, configs, and plugins. | Store the catalog in a plugin-owned folder outside any vault and outside Obsidian's own app config, at a path each vault's plugin instance points to via its own settings. |
+| Vault race conditions | Multiple vaults could try to write the shared catalog at the same time.                                                                                              | Atomic write (temp file + rename) plus an embedded version/timestamp field, so a stale write never overwrites a newer one. No separate lock file needed.                   |
+| Mobile compatibility  | Both the directory scan and the shared catalog require raw Node filesystem access, which doesn't exist on Obsidian mobile.                                           | Mark the plugin `isDesktopOnly: true` in the manifest; no mobile support planned.                                                                                          |
+| ISBN false positives  | Scanning an entire PDF for ISBNs can pick up unrelated ISBNs later in the document (bibliographies, other editions).                                                 | Scope the regex scan to the first 5–10 pages per file; prefer ISBN-13 over ISBN-10 when both appear; take the first valid match.                                           |
+| CORS bypass           | It can be a hassle getting electron apps to work with REST calls due to the Cross Origin Resource Sharing policy                                                     |                                                                                                                                                                            |
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+## Stretch Goals
+- Customizable book covers, titles, and authors (manual overrides on top of OpenLibrary data)
+- Per-vault reading lists ("playlists") built from the shared catalog
 
-## Improve code quality with eslint
+## Timeline
 
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
-```
-
-If you have multiple URLs, you can also do:
-
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
-```
-
-## API Documentation
-
-See https://docs.obsidian.md
+1. Directory scanning + PDF discovery
+2. ISBN regex extraction + OpenLibrary metadata lookup
+3. Library view UI (render the bookshelf inside Obsidian)
+4. Shared cross-vault catalog + persistence
+5. Stretch goals (custom metadata, per-vault reading lists)
