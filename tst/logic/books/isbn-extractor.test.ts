@@ -8,7 +8,7 @@ function fakeBook(filepath: string): Book {
 	return { getFilepath: () => filepath } as unknown as Book;
 }
 
-const CALCULUS_VOL_3 = path.resolve(process.cwd(), 'docs/misc/OpenStax Calculus Vol. 3.pdf');
+const CALCULUS_VOL_3 = path.resolve(process.cwd(), 'docs/misc/sample-test-fixture.pdf');
 
 describe('extractText', () => {
 	it('pulls real text out of the fixture PDF', async () => {
@@ -17,7 +17,7 @@ describe('extractText', () => {
 
 		expect(result).not.toBeNull();
 		expect(result!.text.length).toBeGreaterThan(0);
-		expect(result!.text.toLowerCase()).toContain('calculus');
+		expect(result!.text.toLowerCase()).toContain('sample');
 	}, 15000);
 });
 
@@ -27,13 +27,14 @@ describe('discoverISBNs', () => {
 		const result = await discoverISBNs(book);
 
 		expect(result.ISBN13).not.toBeNull();
-		expect(result.ISBN13).toBe('9781938168079');
+		expect(result.ISBN13).toBe('9780999999998');
 	}, 15000);
 
-	it('leaves ISBN10 null when the edition has no ISBN-10 on its copyright page', async () => {
+	it('finds a checksum-valid ISBN-10 in the first 10 pages', async () => {
 		const book = fakeBook(CALCULUS_VOL_3);
 		const result = await discoverISBNs(book);
 
-		expect(result.ISBN10).toBeNull();
+		expect(result.ISBN10).not.toBeNull();
+		expect(result.ISBN10).toBe('0999999990');
 	}, 15000);
 });
