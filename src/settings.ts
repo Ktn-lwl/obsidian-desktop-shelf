@@ -1,12 +1,13 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab } from 'obsidian';
 import MyPlugin from './main';
+import { AddFolderModal } from './components/AddFolderModal';
 
 export interface DesktopLibrarySettings {
-	mySetting: string;
+	watchedFolders: Array<string>;
 }
 
 export const DEFAULT_SETTINGS: DesktopLibrarySettings = {
-	mySetting: 'default',
+	watchedFolders: Array.of<string>(),
 };
 
 export class DesktopLibrarySettingTab extends PluginSettingTab {
@@ -17,22 +18,39 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	display(): void {
-		const { containerEl } = this;
+	getSettingDefinitions() {
+		return [
+			{
+				type: 'list' as const,
+				heading: 'Watched folders',
+				emptyState: 'No folders being watched yet.',
+				addItem: {
+					name: 'Add Folder',
+					action: () => this.openAddFolderModal(),
+				},
+				onDelete: async (idx: number) => {
+					this.plugin.settings.watchedFolders.splice(idx, 1);
+					await this.plugin.saveData(this.plugin.settings);
+					this.update();
+				},
+				items: this.plugin.settings.watchedFolders.map((folder) => ({
+					name: folder,
+					searchable: false,
+				})),
+			},
+		];
+	}
 
-		containerEl.empty();
+	openAddFolderModal() {
+		const modal = new AddFolderModal(this.app, (folderPath): void => {
+			void this.addFolder(folderPath);
+		});
+		modal.open();
+	}
 
-		new Setting(containerEl)
-			.setName('Settings #1')
-			.setDesc("It's a secret")
-			.addText((text) =>
-				text
-					.setPlaceholder('Enter your secret')
-					.setValue(this.plugin.settings.mySetting)
-					.onChange(async (value) => {
-						this.plugin.settings.mySetting = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+	async addFolder(folderPath: string): Promise<void> {
+		this.plugin.settings.watchedFolders.push(folderPath);
+		await this.plugin.saveData(this.plugin.settings);
+		this.update();
 	}
 }

@@ -2,7 +2,7 @@
 	"id": "desktop-shelf",
 	"name": "Desktop Shelf",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "1.13.0",
 	"description": "Unify books from across your local filesystem.",
 	"author": "Kitan",
 	"authorUrl": "https://github.com/Ktn-lwl",
