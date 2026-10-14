@@ -9,6 +9,16 @@ export interface BookProps {
 	publisher?: string;
 	year?: number;
 	coverImgSrc?: string;
+	metaDataStatus?: MetadataUpdateStatus;
+	lastUpdateAttempt?: number;
+}
+
+export enum MetadataUpdateStatus {
+	SUCCESS = 'success', // no action required
+	PENDING = 'pending', // not attempted
+	PARTIAL = 'partial', // attempted, partial success due to transient error
+	FAILED = 'failed', // attempted, failed due to transient error
+	MISSING = 'missing', // attempted, no valid data exists
 }
 
 export class Book {
@@ -20,6 +30,8 @@ export class Book {
 	private publisher?: string;
 	private year?: number;
 	private coverImgSrc?: string;
+	private metaDataStatus?: MetadataUpdateStatus;
+	private lastUpdateAttempt?: number;
 
 	constructor(props: BookProps) {
 		this.filepath = props.filepath;
@@ -30,66 +42,103 @@ export class Book {
 		this.publisher = props.publisher;
 		this.year = props.year;
 		this.coverImgSrc = props.coverImgSrc;
+		this.metaDataStatus = props.metaDataStatus ?? MetadataUpdateStatus.PENDING;
+		this.lastUpdateAttempt = props.lastUpdateAttempt ?? Date.now();
 	}
 
-	setTitle(title: string) {
+	get props(): BookProps {
+		return {
+			filepath: this.filepath,
+			title: this.title,
+			author: this.author,
+			isbn10: this.isbn10,
+			isbn13: this.isbn13,
+			publisher: this.publisher,
+			year: this.year,
+			coverImgSrc: this.coverImgSrc,
+			metaDataStatus: this.metaDataStatus,
+			lastUpdateAttempt: this.lastUpdateAttempt,
+		};
+	}
+
+	set Title(title: string) {
 		this.title = title;
 	}
 
-	setAuthor(author: string) {
+	set Author(author: string) {
 		this.author = author;
 	}
 
-	setISBN10(isbn10: ISBN10) {
+	set ISBN10(isbn10: ISBN10) {
 		this.isbn10 = isbn10;
 	}
 
-	setISBN13(isbn13: ISBN13) {
+	set ISBN13(isbn13: ISBN13) {
 		this.isbn13 = isbn13;
 	}
 
-	setPublisher(publisher: string) {
+	set Publisher(publisher: string) {
 		this.publisher = publisher;
 	}
 
-	setYear(year: number) {
+	set Year(year: number) {
 		this.year = year;
 	}
 
-	setCoverImgSrc(coverImgSrc: string) {
+	set CoverImgSrc(coverImgSrc: string) {
 		this.coverImgSrc = coverImgSrc;
 	}
 
-	getFilepath(): string {
+	set MetaDataUpdateStatus(status: MetadataUpdateStatus) {
+		this.metaDataStatus = status;
+	}
+
+	set LastUpdateAttempt(time: number) {
+		this.lastUpdateAttempt = time;
+	}
+
+	get Filepath(): string {
 		return this.filepath;
 	}
 
-	getTitle(): string {
+	get Title(): string {
 		return this.title;
 	}
 
-	getAuthor(): string {
+	get Author(): string {
 		return this.author;
 	}
 
-	getISBN10(): ISBN10 | undefined {
+	get ISBN10(): ISBN10 | undefined {
 		return this.isbn10;
 	}
 
-	getISBN13(): ISBN13 | undefined {
+	get ISBN13(): ISBN13 | undefined {
 		return this.isbn13;
 	}
 
-	getPublisher(): string | undefined {
+	get Publisher(): string | undefined {
 		return this.publisher;
 	}
 
-	getYear(): number | undefined {
+	get Year(): number | undefined {
 		return this.year;
 	}
 
-	getCoverImgSrc(): string | undefined {
+	get CoverImgSrc(): string | undefined {
 		return this.coverImgSrc;
+	}
+
+	get canUpdate(): boolean {
+		return (
+			this.metaDataStatus === MetadataUpdateStatus.PENDING ||
+			this.metaDataStatus === MetadataUpdateStatus.PARTIAL ||
+			this.metaDataStatus === MetadataUpdateStatus.FAILED
+		);
+	}
+
+	get LastUpdated(): number|undefined {
+		return this.lastUpdateAttempt;
 	}
 
 	hasISBN(): boolean {

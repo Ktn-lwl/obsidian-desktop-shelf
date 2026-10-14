@@ -1,12 +1,19 @@
 import { Editor, MarkdownView, MarkdownFileInfo, Plugin } from 'obsidian';
 import { DEFAULT_SETTINGS, DesktopLibrarySettings, DesktopLibrarySettingTab } from './settings';
+import { join } from 'node:path';
 import { LibraryModal } from './components/LibraryModal';
+import { LibraryService } from './logic/LibraryService';
 
 export default class DesktopLibrary extends Plugin {
 	settings!: DesktopLibrarySettings;
+	library!: LibraryService;
 
 	async onload() {
 		await this.loadSettings();
+
+		this.library = new LibraryService(this);
+		await this.library.importCatalog();
+		await this.library.updateCatalog();
 
 		// This creates an icon in the left ribbon.
 		this.addRibbonIcon('library', 'My library', (_evt: MouseEvent) => {
@@ -71,5 +78,17 @@ export default class DesktopLibrary extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	get catalogDir(): string {
+		return join(this.settings.saveDirectory, '.obsidian-desktop-shelf');
+	}
+
+	get catalogPath(): string {
+		return join(this.catalogDir, 'Catalog.json');
+	}
+
+	get imagesDir(): string {
+		return join(this.catalogDir, 'covers');
 	}
 }

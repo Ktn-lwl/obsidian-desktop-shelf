@@ -1,15 +1,14 @@
 import { PDFParse } from 'pdf-parse';
-import { Book } from './book';
 import { assertISBN10, assertISBN13, ISBNData } from '../../model/isbn';
 
 const ISBN_10_REGEX = /(?:ISBN-?(?:10)?[:-]?\s+)((\d-?){9}[\dx])/gi;
 const ISBN_13_REGEX = /(?:ISBN-?(?:13)?[:-]?\s+)((\d-?){13})/gi;
 
-async function discoverISBNs(book: Book) {
-	console.log(`Discovering ISBNs for file at: ${book.getFilepath()}`);
+async function discoverISBNs(filePath: string) {
+	console.log(`Discovering ISBNs for file at: ${filePath}`);
 	let isbnData: ISBNData = { ISBN10: null, ISBN13: null };
 
-	const docText = (await extractText(book))?.text ?? '';
+	const docText = (await extractText(filePath))?.text ?? '';
 
 	const isbn10s = Array.from(docText.matchAll(ISBN_10_REGEX), (match) =>
 		match[1]!.replaceAll('-', ''),
@@ -42,23 +41,23 @@ async function discoverISBNs(book: Book) {
 	}
 
 	if (isbnData.ISBN10 || isbnData.ISBN13) {
-		console.log(`Successfully extracted ISBNs for file at ${book.getFilepath()}`);
+		console.log(`Successfully extracted ISBNs for file at ${filePath}`);
 	} else {
-		console.log(`Failed to extract ISBNs for file at ${book.getFilepath()}`);
+		console.log(`Failed to extract ISBNs for file at ${filePath}`);
 	}
 
 	return isbnData;
 }
 
-async function extractText(book: Book) {
-	const parser = new PDFParse({ url: book.getFilepath(), disableAutoFetch: true });
+async function extractText(filePath: string) {
+	const parser = new PDFParse({ url: filePath, disableAutoFetch: true });
 	let docText = null;
 
 	try {
 		docText = await parser.getText({ first: 10 });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		console.error(`Failed to extract text from file at ${book.getFilepath()}: ${message}`);
+		console.error(`Failed to extract text from file at ${filePath}: ${message}`);
 	} finally {
 		await parser.destroy();
 	}

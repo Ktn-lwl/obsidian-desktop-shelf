@@ -1,13 +1,16 @@
 import { App, PluginSettingTab } from 'obsidian';
 import MyPlugin from './main';
 import { AddFolderModal } from './components/AddFolderModal';
+import { homedir } from 'node:os';
 
 export interface DesktopLibrarySettings {
 	watchedFolders: Array<string>;
+	saveDirectory: string;
 }
 
 export const DEFAULT_SETTINGS: DesktopLibrarySettings = {
 	watchedFolders: Array.of<string>(),
+	saveDirectory: homedir(),
 };
 
 export class DesktopLibrarySettingTab extends PluginSettingTab {

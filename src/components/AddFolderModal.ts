@@ -8,6 +8,7 @@ import {
 	Setting,
 	TextComponent,
 } from 'obsidian';
+import { homedir } from 'node:os';
 
 export class AddFolderModal extends Modal {
 	folderPath: string = '';
@@ -40,6 +41,7 @@ export class AddFolderModal extends Modal {
 				});
 
 				txt.setPlaceholder('/path/to/directory/');
+				txt.setValue(`${homedir().replaceAll('\\', '/')}/`);
 				textBox = txt;
 			})
 			.addButton((btn) => {
