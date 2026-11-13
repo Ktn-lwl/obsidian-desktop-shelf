@@ -42,6 +42,31 @@ function workspace() {
 }
 
 describe('local PDF actions', () => {
+	it('opens another copy when the preferred location is unavailable', async () => {
+		const path = await makePDF();
+		const { app, leaf } = workspace();
+		await openBook(app, {
+			filepath: join(directory!, 'missing.pdf'),
+			filepaths: [join(directory!, 'missing.pdf'), path],
+			title: 'A book',
+		});
+		expect(leaf.openFile).toHaveBeenCalledWith(
+			{ path: `file:${path}`, extension: 'pdf' },
+			{ active: true },
+		);
+		expect(Notice).not.toHaveBeenCalled();
+	});
+	it('reuses a tab showing a different available copy of the same book', async () => {
+		const path = await makePDF();
+		const other = join(directory!, 'other.pdf');
+		await writeFile(other, 'cached');
+		const { app, workspace: ws, leaf } = workspace();
+		leaf.getViewState = () => ({ state: { file: `file:${other}` } });
+		ws.getLeavesOfType.mockReturnValue([leaf]);
+		await openBook(app, { filepath: path, filepaths: [path, other], title: 'A book' });
+		expect(ws.getLeaf).not.toHaveBeenCalled();
+		expect(ws.revealLeaf).toHaveBeenCalledWith(leaf);
+	});
 	it('opens external PDFs in a reader tab with the exact local path', async () => {
 		const path = await makePDF();
 		const { app, workspace: ws, leaf } = workspace();

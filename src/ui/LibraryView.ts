@@ -6,6 +6,7 @@ import { BookDetailsModal } from './BookDetailsModal';
 import { openBook } from './local-files';
 import { BookCard } from './BookCard';
 import { selectBooks, type BookSort } from './book-query';
+import { bookIdentity } from '../logic/books/book-identity';
 
 export const LIBRARY_VIEW_TYPE = 'desktop-shelf-library';
 
@@ -39,7 +40,7 @@ export class LibraryView extends ItemView {
 		return LIBRARY_VIEW_TYPE;
 	}
 	getDisplayText(): string {
-		return 'Book library';
+		return 'My Library';
 	}
 	getIcon(): string {
 		return 'library';
@@ -48,7 +49,7 @@ export class LibraryView extends ItemView {
 	async onOpen(): Promise<void> {
 		this.contentEl.empty();
 		this.contentEl.addClass('desktop-shelf');
-		this.contentEl.createEl('h2', { text: 'Book library' });
+		this.contentEl.createEl('h2', { text: 'My Library' });
 		const toolbar = this.contentEl.createDiv({ cls: 'desktop-shelf-toolbar' });
 		const search = toolbar.createEl('input', {
 			type: 'search',
@@ -183,9 +184,9 @@ export class LibraryView extends ItemView {
 				? 'No books match your search.'
 				: this.plugin.settings.watchedFolders.length
 					? 'No identified books yet. Select Refresh to scan your folders. PDFs need an ISBN to appear in this version.'
-					: 'Add a folder to build your book library. Your PDFs stay in their original folders.',
+					: 'Add a folder to build your library. Your PDFs stay in their original folders.',
 		);
-		const paths = new Set(books.map((book) => book.filepath));
+		const paths = new Set(books.map(bookIdentity));
 		for (const [path, { card }] of this.cards) {
 			if (!paths.has(path)) {
 				this.removeChild(card);
@@ -195,7 +196,7 @@ export class LibraryView extends ItemView {
 		let index = 0;
 		for (const book of books) {
 			const signature = JSON.stringify(book);
-			let entry = this.cards.get(book.filepath);
+			let entry = this.cards.get(bookIdentity(book));
 			if (entry?.signature !== signature) {
 				if (entry) this.removeChild(entry.card);
 				const card = new BookCard(
@@ -217,7 +218,7 @@ export class LibraryView extends ItemView {
 				);
 				this.addChild(card);
 				entry = { signature, card };
-				this.cards.set(book.filepath, entry);
+				this.cards.set(bookIdentity(book), entry);
 			}
 			const position = this.grid.children.item(index++);
 			if (position !== entry.card.el) this.grid.insertBefore(entry.card.el, position);

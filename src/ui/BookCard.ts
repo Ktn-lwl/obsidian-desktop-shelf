@@ -2,11 +2,14 @@ import { Component } from 'obsidian';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import type { BookProps } from '../logic/books/book';
+import { loadPdfPreview } from './pdf-preview';
 
 export class BookCard extends Component {
 	readonly el: HTMLElement;
 	private active = false;
 	private objectUrl?: string;
+	private started = false;
+	private readonly controller = new AbortController();
 
 	constructor(
 		parent: HTMLElement,
@@ -45,28 +48,58 @@ export class BookCard extends Component {
 	}
 	onunload(): void {
 		this.active = false;
+		this.controller.abort();
 		if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
 		this.el.remove();
 	}
 
 	private async loadCover(cover: HTMLElement): Promise<void> {
+		if (this.started || !this.active) return;
+		this.started = true;
 		const path = this.book.coverImgSrc;
-		if (!path) return;
-		const inside = relative(this.coversDir, path);
-		if (!inside || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside))
-			return;
-		try {
-			const data = await readFile(path);
-			if (!this.active) return;
-			this.objectUrl = URL.createObjectURL(new Blob([new Uint8Array(data)]));
-			const img = cover.createEl('img', {
-				attr: { alt: '', decoding: 'async' },
-			});
-			this.registerDomEvent(img, 'load', () => cover.addClass('has-cover'));
-			this.registerDomEvent(img, 'error', () => img.remove());
-			img.src = this.objectUrl;
-		} catch {
-			/* Keep the title placeholder if the cached cover is unavailable. */
+		if (path) {
+			const inside = relative(this.coversDir, path);
+			if (
+				inside &&
+				inside !== '..' &&
+				!inside.startsWith(`..${sep}`) &&
+				!isAbsolute(inside)
+			) {
+				try {
+					const data = await readFile(path, { signal: this.controller.signal });
+					this.showCover(cover, new Uint8Array(data), false);
+					return;
+				} catch {
+					/* Try the PDF when the downloaded cover is missing. */
+				}
+			}
 		}
+		await this.loadPreview(cover);
+	}
+
+	private async loadPreview(cover: HTMLElement): Promise<void> {
+		if (!this.active) return;
+		const data = await loadPdfPreview(
+			this.book,
+			this.coversDir,
+			this.controller.signal,
+			cover.ownerDocument,
+		);
+		if (data) this.showCover(cover, data, true);
+	}
+
+	private showCover(cover: HTMLElement, data: Uint8Array<ArrayBuffer>, preview: boolean): void {
+		if (!this.active) return;
+		if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+		this.objectUrl = URL.createObjectURL(new Blob([data]));
+		const img = cover.createEl('img', { attr: { alt: '', decoding: 'async' } });
+		this.registerDomEvent(img, 'load', () => cover.addClass('has-cover'));
+		this.registerDomEvent(img, 'error', () => {
+			img.remove();
+			if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+			this.objectUrl = undefined;
+			if (!preview) void this.loadPreview(cover);
+		});
+		img.src = this.objectUrl;
 	}
 }

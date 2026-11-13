@@ -6,6 +6,7 @@ import { CatalogFile } from '../model';
 import { EgressClient } from './network';
 import { isAbsolute, relative, sep } from 'node:path';
 import { delay, throwIfAborted } from '../utils/cancellation';
+import { expandBooks, groupBooks } from './books/book-identity';
 
 const CATALOG_LOCK_TIMEOUT_MS = 15_000;
 const CATALOG_LOCK_RETRY_MS = 100;
@@ -23,7 +24,7 @@ export class LibraryService {
 
 	get books(): ReadonlyArray<Readonly<BookProps>> {
 		return (this.snapshot ??= Object.freeze(
-			Array.from(this.catalog.values(), (book) => Object.freeze(book.props)),
+			Array.from(groupBooks(this.catalog).values(), (book) => Object.freeze(book.props)),
 		));
 	}
 
@@ -137,6 +138,12 @@ export class LibraryService {
 			try {
 				throwIfAborted(signal);
 				await this.updateBook(book, signal);
+				for (const filepath of book.props.filepaths ?? [book.Filepath]) {
+					this.catalog.set(
+						filepath,
+						new Book({ ...book.props, filepath, filepaths: undefined }),
+					);
+				}
 				if (
 					this.plugin.settings.onlineLookupEnabled &&
 					(book.props.metaDataStatus === MetadataUpdateStatus.FAILED ||
@@ -171,12 +178,7 @@ export class LibraryService {
 			const diskCatalog = await this.readCatalogFromDisk();
 			throwIfAborted(signal);
 			const mergedCatalog = new Map<string, Book>();
-			const diskBooks = new Map(
-				Object.entries(diskCatalog?.data ?? {}).map(([filepath, record]) => [
-					filepath,
-					new Book(record),
-				]),
-			);
+			const diskBooks = expandBooks(diskCatalog?.data ?? {});
 
 			for (const [filepath, book] of diskBooks) {
 				if (
@@ -202,7 +204,10 @@ export class LibraryService {
 			const payload: CatalogFile = {
 				lastUpdated,
 				data: Object.fromEntries(
-					Array.from(mergedCatalog, ([filepath, book]) => [filepath, book.props]),
+					Array.from(groupBooks(mergedCatalog), ([identity, book]) => [
+						identity,
+						book.props,
+					]),
 				),
 			};
 			const tmp = `${this.plugin.catalogPath}.${process.pid}.${Date.now()}.${temporaryFileCounter++}.tmp`;
@@ -218,7 +223,7 @@ export class LibraryService {
 				throw error;
 			}
 
-			this.catalog = mergedCatalog;
+			this.catalog = expandBooks(payload.data);
 			this.lastUpdated = lastUpdated;
 			this.notify(true);
 		}, signal);
@@ -229,12 +234,7 @@ export class LibraryService {
 			const parsed = await this.readCatalogFromDisk();
 			if (!parsed) return;
 			this.lastUpdated = parsed.lastUpdated;
-			this.catalog = new Map(
-				Object.entries(parsed.data).map(([filepath, record]) => [
-					filepath,
-					new Book(record),
-				]),
-			);
+			this.catalog = expandBooks(parsed.data);
 			this.notify(true);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -355,7 +355,7 @@ export class LibraryService {
 	}
 
 	private *pendingBooks(): Generator<Book> {
-		for (const book of this.catalog.values()) {
+		for (const book of groupBooks(this.catalog).values()) {
 			if (book.canUpdate) {
 				yield book;
 			}

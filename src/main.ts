@@ -23,32 +23,32 @@ export default class DesktopLibrary extends Plugin {
 		this.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, this));
 		const openLibrary = () => {
 			void this.openLibrary().catch((error) => {
-				new Notice('Could not open the book library.');
+				new Notice('Could not open My Library.');
 				console.error(error);
 			});
 		};
-		this.addRibbonIcon('library', 'Open book library', openLibrary);
-		this.addCommand({ id: 'open-library', name: 'Open book library', callback: openLibrary });
+		this.addRibbonIcon('library', 'Open My Library', openLibrary);
+		this.addCommand({ id: 'open-library', name: 'Open My Library', callback: openLibrary });
 		// Preserve existing opening command IDs for saved hotkeys.
 		for (const id of ['open-modal-simple', 'open-modal-complex']) {
-			this.addCommand({ id, name: 'Open book library (legacy)', callback: openLibrary });
+			this.addCommand({ id, name: 'Open My Library (legacy)', callback: openLibrary });
 		}
 		this.addCommand({
 			id: 'refresh-library',
-			name: 'Refresh book library',
+			name: 'Refresh Library',
 			callback: () => this.refreshLibrary(),
 		});
 		const status = this.addStatusBarItem();
-		status.setText('Book library: ready');
+		status.setText('Library: ready');
 		this.register(
-			this.library.subscribe(() => status.setText(`Book library: ${this.library.status}`)),
+			this.library.subscribe(() => status.setText(`Library: ${this.library.status}`)),
 		);
 
 		this.app.workspace.onLayoutReady(() => {
 			if (this.unloaded) return;
 			void migratePdfTabs(this.app, () => this.unloaded);
 			void this.refreshLibrary().catch((error) => {
-				if (!this.unloaded) console.error('Failed to refresh book library', error);
+				if (!this.unloaded) console.error('Failed to refresh library', error);
 			});
 		});
 	}
@@ -84,8 +84,8 @@ export default class DesktopLibrary extends Plugin {
 				this.refreshError =
 					error instanceof Error ? error.message : 'Library refresh failed';
 				this.library.reportStatus('Refresh failed');
-				new Notice('Book library refresh failed. Open the library for details.');
-				console.error('Failed to refresh book library', error);
+				new Notice('Library refresh failed. Open My Library for details.');
+				console.error('Failed to refresh library', error);
 			})
 			.finally(() => {
 				this.refreshPromise = undefined;

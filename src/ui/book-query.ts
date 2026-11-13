@@ -10,7 +10,14 @@ export function selectBooks(
 	const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
 	return books
 		.filter((book) => {
-			const searchable = [book.title, book.author, book.isbn10, book.isbn13, book.filepath]
+			const searchable = [
+				book.title,
+				book.author,
+				book.isbn10,
+				book.isbn13,
+				book.filepath,
+				...(book.filepaths ?? []),
+			]
 				.join(' ')
 				.toLocaleLowerCase();
 			return terms.every((term) => searchable.includes(term));

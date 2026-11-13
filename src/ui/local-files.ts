@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { extname, isAbsolute } from 'node:path';
-import { Notice, type App } from 'obsidian';
+import { Notice, type App, type TFile } from 'obsidian';
 import { shell } from 'electron';
 import type { BookProps } from '../logic/books/book';
 import { NATIVE_PDF_VIEW_TYPE, NativePdfUnavailableError, resolvePdfFile } from './native-pdf';
@@ -17,14 +17,24 @@ async function checkPDF(path: string): Promise<void> {
 
 export async function openBook(
 	app: App,
-	book: Pick<BookProps, 'filepath' | 'title'>,
+	book: Pick<BookProps, 'filepath' | 'filepaths' | 'title'>,
 ): Promise<void> {
 	try {
-		await checkPDF(book.filepath);
-		const file = resolvePdfFile(app, book.filepath);
+		const files: TFile[] = [];
+		let failure: unknown;
+		for (const path of new Set([book.filepath, ...(book.filepaths ?? [])])) {
+			try {
+				await checkPDF(path);
+				files.push(resolvePdfFile(app, path));
+			} catch (error) {
+				failure = error;
+			}
+		}
+		const file = files[0];
+		if (!file) throw failure;
 		let leaf = app.workspace
 			.getLeavesOfType(NATIVE_PDF_VIEW_TYPE)
-			.find((leaf) => leaf.getViewState().state?.file === file.path);
+			.find((leaf) => files.some((file) => leaf.getViewState().state?.file === file.path));
 		if (!leaf) {
 			leaf = app.workspace.getLeaf('tab');
 			await leaf.openFile(file, { active: true });

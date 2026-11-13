@@ -18,23 +18,29 @@ export class BookDetailsModal extends Modal {
 			['Publisher', this.book.publisher],
 			['Year', this.book.year?.toString()],
 			['Metadata', this.book.metaDataStatus],
-			['File', this.book.filepath],
 		];
 		for (const [label, value] of fields) {
 			if (label && value) new Setting(this.contentEl).setName(label).setDesc(value);
 		}
-		new Setting(this.contentEl)
-			.addButton((button) =>
-				button
-					.setButtonText('Open PDF')
-					.setCta()
-					.onClick(() => openBook(this.app, this.book)),
-			)
-			.addButton((button) =>
-				button
-					.setButtonText('Show in folder')
-					.onClick(() => showInFolder(this.book.filepath)),
-			);
+		new Setting(this.contentEl).addButton((button) =>
+			button
+				.setButtonText('Open PDF')
+				.setCta()
+				.onClick(() => openBook(this.app, this.book)),
+		);
+		for (const filepath of this.book.filepaths ?? [this.book.filepath]) {
+			new Setting(this.contentEl)
+				.setName('File')
+				.setDesc(filepath)
+				.addButton((button) =>
+					button
+						.setButtonText('Open copy')
+						.onClick(() => openBook(this.app, { filepath, title: this.book.title })),
+				)
+				.addButton((button) =>
+					button.setButtonText('Show in folder').onClick(() => showInFolder(filepath)),
+				);
+		}
 	}
 
 	onClose(): void {

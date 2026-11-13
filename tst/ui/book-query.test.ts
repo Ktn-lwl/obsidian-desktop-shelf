@@ -17,6 +17,10 @@ const books: BookProps[] = [
 ];
 
 describe('shelf search and sorting', () => {
+	it('finds a book using an alternate copy filename', () => {
+		const book = { ...books[0]!, filepaths: ['/backup/alternate-copy.pdf'] };
+		expect(selectBooks([book], 'alternate-copy', 'title')).toEqual([book]);
+	});
 	it('matches terms across title and author regardless of case or whitespace', () => {
 		expect(selectBooks(books, '  CLEAN martin ', 'title')).toEqual([books[0]]);
 	});
