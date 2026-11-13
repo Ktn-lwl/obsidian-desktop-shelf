@@ -7,13 +7,17 @@ import { LibraryService } from './logic/LibraryService';
 export default class DesktopLibrary extends Plugin {
 	settings!: DesktopLibrarySettings;
 	library!: LibraryService;
+	private catalogImported = false;
+	private refreshPromise: Promise<void> | undefined;
+	private unloaded = false;
+	private readonly refreshController = new AbortController();
 
 	async onload() {
 		await this.loadSettings();
 
+		this.addSettingTab(new DesktopLibrarySettingTab(this.app, this));
+
 		this.library = new LibraryService(this);
-		await this.library.importCatalog();
-		await this.library.updateCatalog();
 
 		// This creates an icon in the left ribbon.
 		this.addRibbonIcon('library', 'My library', (_evt: MouseEvent) => {
@@ -62,11 +66,48 @@ export default class DesktopLibrary extends Plugin {
 			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new DesktopLibrarySettingTab(this.app, this));
+		this.addCommand({
+			id: 'refresh-library',
+			name: 'Refresh book library',
+			callback: () => {
+				void this.refreshLibrary().catch((error) => {
+					if (!this.unloaded) console.error('Failed to refresh book library', error);
+				});
+			},
+		});
+
+		this.app.workspace.onLayoutReady(() => {
+			if (this.unloaded) return;
+			void this.refreshLibrary().catch((error) => {
+				if (!this.unloaded) console.error('Failed to refresh book library', error);
+			});
+		});
 	}
 
-	onunload() {}
+	onunload() {
+		this.unloaded = true;
+		this.refreshController.abort();
+	}
+
+	private refreshLibrary(): Promise<void> {
+		if (this.refreshPromise) return this.refreshPromise;
+
+		this.refreshPromise = this.loadAndRefreshLibrary().finally(() => {
+			this.refreshPromise = undefined;
+		});
+		return this.refreshPromise;
+	}
+
+	private async loadAndRefreshLibrary(): Promise<void> {
+		if (this.unloaded) return;
+		if (!this.catalogImported) {
+			await this.library.importCatalog();
+			this.catalogImported = true;
+		}
+		if (!this.unloaded) {
+			await this.library.updateCatalog(this.refreshController.signal);
+		}
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(

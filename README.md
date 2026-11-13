@@ -12,11 +12,9 @@ A library plugin that syncs textbooks from anywhere on the local filesystem and 
 
 - Obsidian Plugin API
 - TypeScript
-- `pdf-parse` — extracts text from PDFs for regex scanning
-- OpenLibrary JSON API — metadata lookup by ISBN
-
-> [!Tip] Metadata lookup source
-> OpenLibrary is simpler to implement in theory becuase their REST api is unauthenticated. The gooogle books api however requires either OAuth 2.0 or an API key for access. Tradeoff here is data quality + aesthetics over simplicity.
+- Obsidian's PDF.js loader — extracts text from PDFs for ISBN scanning
+- Open Library — metadata lookup by ISBN
+- Google Books content endpoint — cover lookup by ISBN
 
 Since scanning arbitrary filesystem locations (and later, the shared catalog) both require raw Node filesystem access, this plugin is desktop-only by design. Set `isDesktopOnly: true` in the plugin manifest.
 
@@ -26,20 +24,17 @@ The user provides one or more top-level directories for the plugin to scan for P
 
 ### Library Parsing
 
-Each found PDF has its first 5–10 pages (not the whole document) extracted with `pdf-parse` and scanned with a regex for ISBNs. Scoping to the first few pages keeps large textbooks fast to scan and avoids false positives from ISBNs that show up later in the book (bibliographies, "also available as," other-edition callouts). When both an ISBN-10 and ISBN-13 are found, prefer the ISBN-13; otherwise take the first valid match.
+Each found PDF is scanned page-by-page through the first and last 10% of its pages using Obsidian's PDF.js loader. Scanning stops early as soon as a valid ISBN-13 is found, which avoids reading all of those pages for most books while still catching identifiers in the front matter or back matter. When a page labels a list of ISBNs (such as hardback, PDF, and EPUB editions), each listed identifier is validated and the first valid ISBN-13 is selected. This limits false positives from ISBNs elsewhere in the book (bibliographies, "also available as," other-edition callouts). When no ISBN-13 is found, the first valid ISBN-10 is retained.
 
-Identified ISBNs get their metadata pulled from the OpenLibrary API and cached locally for rendering. Books that can't be identified fall back to their filename and a rendered first page as a placeholder cover.
+Identified ISBNs get their metadata pulled from Open Library and cached locally for rendering. Covers are fetched separately from the Google Books content endpoint and downloaded locally when available; missing covers do not prevent metadata from being saved.
 
 For unidentified PDFs, show the user the list so they can either manually supply an ISBN or mark the file as "not a book" to exclude it from future scans. This keeps a bad regex match from silently mislabeling something forever.
 
-### OpenLibrary API
+### Book metadata and covers
 
-Metadata is pulled from OpenLibrary's ISBN lookup endpoint, keyed by the ISBNs found during parsing. At minimum this should include: title, author(s), a cover image URL, and the numeric cover ID — the fields the library view actually needs to render a shelf. Anything else OpenLibrary returns (subjects, publish date, page count) can be stored for a future detail view but isn't required for v1.
+Metadata requests use Open Library's ISBN search endpoint. Transient request failures are retried with backoff, and valid responses without a matching book are marked missing. Cover requests use the Google Books content endpoint with the ISBN and are cached locally; metadata lookup does not depend on Google Books API availability.
 
-All requests should include a `User-Agent` header identifying the plugin and a contact email. Unidentified requests to OpenLibrary's main API are limited to 1 request/second; identified ones get 3/second. On a first sync of a large library, these metadata lookups will hit that per-second limit well before the covers limit below does, so the same "batch the initial sync" approach applies here too.
-
-> [!Warning] Courtesy and rate limiting
-> Open Library explicitly forbids bulk crawling of their API for book covers, and rate-limits cover access **by ISBN or other identifiers** to 100 requests per 5 minutes — accessing a cover by its numeric cover ID isn't rate-limited at all. Since the cover ID gets cached alongside the rest of a book's metadata on first lookup, this only matters for the initial sync: once cached, every later access (re-renders, reopening the library) goes through the ID-based endpoint and skips the limit entirely. For a first sync of an existing library with over a hundred books, batch the initial ISBN-based cover requests to 75 every 5 minutes.
+Online lookup is disabled by default. Enable **Online book lookup** in the plugin settings, then run **Refresh book library** to fetch metadata and covers. With this setting enabled, the plugin sends ISBNs to Open Library for metadata and Google Books for cover images. Neither service receives PDF contents or local file paths.
 
 ### Persistence
 
@@ -49,27 +44,29 @@ Rather than storing the catalog inside Obsidian's own app-level config folder (`
 
 On activation, the plugin looks for the catalog file at the configured path — uses it if found, creates it if missing — then periodically rescans and updates it.
 
-Writes use an atomic pattern (write to a temp file, then rename over the target) plus a version/timestamp field inside the JSON itself, so a vault only overwrites its local view when the file on disk is newer. This avoids the corruption and lost-update problems a lock file solves, without needing real cross-platform file locking, which is unreliable in Node and unnecessary at this contention level (single user, infrequent writes).
+Writes acquire an exclusive lock file, reread the latest catalog while holding the lock, merge the current vault's scan results, then write a unique temporary file and rename it over the catalog. A successfully scanned watched folder is authoritative for which paths remain in that folder; for duplicate paths, the record with the latest metadata-update attempt is retained. Entries outside the current vault's scanned folders and entries under folders that failed to scan are retained; newer metadata updates are merged regardless of scan success. If a process crashes while holding the lock, later writers time out with instructions to remove the stale lock only after confirming no plugin instance is using the catalog.
 
 ## Projected Issues
 
 | Issue                 | Description                                                                                                                                                          | Fix                                                                                                                                                                        |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Vault isolation       | The catalog needs to be shared among vaults, but Obsidian vaults are isolated by design — each has its own `.obsidian` directory for settings, configs, and plugins. | Store the catalog in a plugin-owned folder outside any vault and outside Obsidian's own app config, at a path each vault's plugin instance points to via its own settings. |
-| Vault race conditions | Multiple vaults could try to write the shared catalog at the same time.                                                                                              | Atomic write (temp file + rename) plus an embedded version/timestamp field, so a stale write never overwrites a newer one. No separate lock file needed.                   |
+| Vault race conditions | Multiple vaults could try to write the shared catalog at the same time.                                                                                              | Serialize writes with an exclusive lock, reread and merge the latest catalog, and atomically replace the file.                                                             |
 | Mobile compatibility  | Both the directory scan and the shared catalog require raw Node filesystem access, which doesn't exist on Obsidian mobile.                                           | Mark the plugin `isDesktopOnly: true` in the manifest; no mobile support planned.                                                                                          |
-| ISBN false positives  | Scanning an entire PDF for ISBNs can pick up unrelated ISBNs later in the document (bibliographies, other editions).                                                 | Scope the regex scan to the first 5–10 pages per file; prefer ISBN-13 over ISBN-10 when both appear; take the first valid match.                                           |
-| CORS bypass           | It can be a hassle getting electron apps to work with REST calls due to the Cross Origin Resource Sharing policy                                                     |                                                                                                                                                                            |
+| ISBN false positives  | Scanning an entire PDF for ISBNs can pick up unrelated ISBNs later in the document (bibliographies, other editions).                                                 | Scope the scan to the first and last 10% of pages and stop early when an ISBN-13 is found; prefer ISBN-13 over ISBN-10 when both appear; take the first valid match.       |
+| CORS bypass           | It can be a hassle getting electron apps to work with REST calls due to the Cross Origin Resource Sharing policy                                                     | Use Obsidian's `requestUrl` API for network requests.                                                                                                                      |
+
+Open Library metadata requests are serialized and spaced one second apart. Transient retries pass through the same queue, honor `Retry-After` up to five minutes, and identify the plugin with a `User-Agent` containing its version and project URL.
 
 ## Stretch Goals
 
-- Customizable book covers, titles, and authors (manual overrides on top of OpenLibrary data)
+- Customizable book covers, titles, and authors (manual overrides on top of Open Library data)
 - Per-vault reading lists ("playlists") built from the shared catalog
 
 ## Timeline
 
 1. Directory scanning + PDF discovery
-2. ISBN regex extraction + OpenLibrary metadata lookup
+2. ISBN regex extraction + Open Library metadata and Google Books cover lookup
 3. Library view UI (render the bookshelf inside Obsidian)
 4. Shared cross-vault catalog + persistence
 5. Stretch goals (custom metadata, per-vault reading lists)

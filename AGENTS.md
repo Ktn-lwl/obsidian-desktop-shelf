@@ -29,6 +29,14 @@ npm run dev
 
 ### Production build
 
+Run formatting, linting, build and tests in one command
+
+```bash
+npm run build:release
+```
+
+Build the project.
+
 ```bash
 npm run build
 ```
