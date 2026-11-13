@@ -1,8 +1,96 @@
-/*
-
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
-
-*/
+.desktop-shelf {
+	padding: var(--size-4-6);
+	overflow-y: auto;
+}
+.desktop-shelf-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	align-items: center;
+}
+.desktop-shelf-toolbar input {
+	flex: 1 1 180px;
+	min-width: 0;
+}
+.desktop-shelf-status {
+	color: var(--text-muted);
+	margin: var(--size-4-4) 0;
+}
+.desktop-shelf-issues {
+	color: var(--text-warning);
+	overflow-wrap: anywhere;
+}
+.desktop-shelf-empty {
+	color: var(--text-muted);
+}
+.desktop-shelf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
+	gap: var(--size-4-6);
+}
+.desktop-shelf-card {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+.desktop-shelf-card .desktop-shelf-open {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: auto;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	text-align: start;
+	white-space: normal;
+	color: var(--text-normal);
+	gap: var(--size-4-2);
+}
+.desktop-shelf-cover {
+	position: relative;
+	aspect-ratio: 2 / 3;
+	width: 100%;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	overflow: hidden;
+	display: grid;
+	place-items: center;
+}
+.desktop-shelf-placeholder {
+	padding: var(--size-4-4);
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+	max-height: 100%;
+	overflow: hidden;
+}
+.desktop-shelf-cover img {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
+.desktop-shelf-cover.has-cover .desktop-shelf-placeholder {
+	visibility: hidden;
+}
+.desktop-shelf-title {
+	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
+}
+.desktop-shelf-author {
+	color: var(--text-muted);
+	font-size: var(--font-small);
+	overflow-wrap: anywhere;
+}
+.desktop-shelf-card .desktop-shelf-details {
+	align-self: start;
+	margin-top: auto;
+	font-size: var(--font-small);
+}
+.desktop-shelf button:focus-visible,
+.desktop-shelf input:focus-visible,
+.desktop-shelf select:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 3px;
+}
