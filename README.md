@@ -8,6 +8,24 @@ I have a lot of e-textbooks. Whenever I want to learn a new topic, I usually get
 
 A library plugin that syncs textbooks from anywhere on the local filesystem and renders a bookshelf view inside Obsidian, without copying files into a vault.
 
+## Using My Library
+
+1. Select the library ribbon icon or run **Open My Library** from the command palette.
+2. Select **Add a folder** and choose a local folder containing PDFs. The library scans its subfolders without copying PDFs into your vault.
+3. Search by title, author, ISBN, or filename, and sort by title or author.
+4. Select a book to open its PDF in an Obsidian tab. Select **Book details** to see metadata and use **Show in folder**.
+5. Select **Refresh** to scan again. The shelf shows progress and reports folders or books that could not be processed.
+
+Books open in Obsidian’s built-in PDF viewer, with its native toolbar, search, text selection, navigation, and zoom. External PDFs stay in their original folders; no PDF copies or reference files are created in the vault. Obsidian manages PDF tabs and their workspace state. Existing tabs from the earlier custom reader migrate when the plugin loads.
+
+Requires desktop Obsidian 1.14.2 or newer for native external-file support. The adapter uses Obsidian’s internal `file:` path convention through the public file-opening APIs; unsupported builds show an error instead of opening another app. External paths remain local to the computer, so another device needs access to the same paths.
+
+Each ISBN appears once in the library, even when copies exist in multiple folders. Equivalent ISBN-10 and ISBN-13 values share an entry; different edition ISBNs remain separate. **Book details** lists every copy, and opening a book falls back to another available location. Existing catalogs migrate automatically on save, retaining their file locations.
+
+The library opens in a workspace tab and reuses that tab when opened again. Cached books remain available during refresh. Covers load from the local cache as you scroll. When no downloaded cover is available, the first PDF page becomes the cover. These previews are generated locally only when needed, cached, and refreshed when the PDF changes. Unreadable PDFs retain the book title placeholder.
+
+Online lookup is optional and disabled by default; enable it in the plugin settings to fetch metadata and covers. This version only lists PDFs with detected ISBNs. Manual identification and exclusions are planned.
+
 ## Technical Overview
 
 - Obsidian Plugin API
@@ -34,7 +52,7 @@ For unidentified PDFs, show the user the list so they can either manually supply
 
 Metadata requests use Open Library's ISBN search endpoint. Transient request failures are retried with backoff, and valid responses without a matching book are marked missing. Cover requests use the Google Books content endpoint with the ISBN and are cached locally; metadata lookup does not depend on Google Books API availability.
 
-Online lookup is disabled by default. Enable **Online book lookup** in the plugin settings, then run **Refresh book library** to fetch metadata and covers. With this setting enabled, the plugin sends ISBNs to Open Library for metadata and Google Books for cover images. Neither service receives PDF contents or local file paths.
+Online lookup is disabled by default. Enable **Online book lookup** in the plugin settings, then run **Refresh Library** to fetch metadata and covers. With this setting enabled, the plugin sends ISBNs to Open Library for metadata and Google Books for cover images. Neither service receives PDF contents or local file paths.
 
 ### Persistence
 

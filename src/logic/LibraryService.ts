@@ -1,11 +1,12 @@
-import MyPlugin from '../main';
+import type MyPlugin from '../main';
 import { createBook, getPDFPaths } from './books/directory-crawler';
-import { Book, MetadataUpdateStatus } from './books/book';
+import { Book, type BookProps, MetadataUpdateStatus } from './books/book';
 import { mkdir, open, writeFile, readFile, rename, unlink } from 'node:fs/promises';
 import { CatalogFile } from '../model';
 import { EgressClient } from './network';
 import { isAbsolute, relative, sep } from 'node:path';
 import { delay, throwIfAborted } from '../utils/cancellation';
+import { expandBooks, groupBooks } from './books/book-identity';
 
 const CATALOG_LOCK_TIMEOUT_MS = 15_000;
 const CATALOG_LOCK_RETRY_MS = 100;
@@ -16,6 +17,46 @@ export class LibraryService {
 	private catalog: Map<string, Book> = new Map();
 	private lastUpdated = 0;
 	private client: EgressClient;
+	private listeners = new Set<() => void>();
+	private message = 'Ready';
+	private problems: string[] = [];
+	private snapshot?: ReadonlyArray<Readonly<BookProps>>;
+
+	get books(): ReadonlyArray<Readonly<BookProps>> {
+		return (this.snapshot ??= Object.freeze(
+			Array.from(groupBooks(this.catalog).values(), (book) => Object.freeze(book.props)),
+		));
+	}
+
+	get status(): string {
+		return this.message;
+	}
+	get issues(): readonly string[] {
+		return [...this.problems];
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
+
+	reportStatus(message: string): void {
+		this.message = message;
+		this.notify();
+	}
+
+	private notify(catalogChanged = false): void {
+		if (catalogChanged) this.snapshot = undefined;
+		for (const listener of this.listeners) {
+			try {
+				listener();
+			} catch (error) {
+				console.error('Library listener failed', error);
+			}
+		}
+	}
 
 	constructor(plugin: MyPlugin) {
 		this.plugin = plugin;
@@ -24,6 +65,9 @@ export class LibraryService {
 
 	async updateCatalog(signal?: AbortSignal): Promise<void> {
 		throwIfAborted(signal);
+		this.problems = [];
+		this.reportStatus('Scanning folders…');
+		let discovered = 0;
 		const updatedCatalog = new Map<string, Book>();
 		const successfullyScannedFolders: string[] = [];
 
@@ -33,6 +77,7 @@ export class LibraryService {
 			try {
 				for await (const filepath of getPDFPaths(folder, signal)) {
 					throwIfAborted(signal);
+					this.reportStatus(`Scanning PDFs · ${++discovered} found`);
 					try {
 						const book =
 							this.catalog.get(filepath) ?? (await createBook(filepath, signal));
@@ -45,6 +90,7 @@ export class LibraryService {
 						folderCatalog.set(filepath, book);
 					} catch (error) {
 						throwIfAborted(signal);
+						this.problems.push(`Could not read PDF: ${filepath}`);
 						console.error(`Failed to process PDF: ${filepath}`, error);
 					}
 				}
@@ -54,6 +100,7 @@ export class LibraryService {
 				successfullyScannedFolders.push(folder);
 			} catch (error) {
 				throwIfAborted(signal);
+				this.problems.push(`Could not scan folder: ${folder}`);
 				console.error(`Failed to scan watched folder: ${folder}`, error);
 				for (const [filepath, book] of this.catalog) {
 					const pathFromFolder = relative(folder, filepath);
@@ -70,20 +117,53 @@ export class LibraryService {
 		}
 
 		throwIfAborted(signal);
+		// Keep shared books visible while local metadata is refreshed.
+		for (const [filepath, book] of this.catalog) {
+			if (
+				!successfullyScannedFolders.some((folder) => isPathWithinFolder(folder, filepath))
+			) {
+				updatedCatalog.set(filepath, book);
+			}
+		}
 		this.catalog = updatedCatalog;
+		this.notify(true);
 		this.lastUpdated = Date.now();
 
-		for (const book of this.pendingBooks()) {
+		const pending = Array.from(this.pendingBooks());
+		let completed = 0;
+		for (const book of pending) {
+			if (this.plugin.settings.onlineLookupEnabled) {
+				this.reportStatus(`Looking up books · ${++completed} of ${pending.length}`);
+			}
 			try {
 				throwIfAborted(signal);
 				await this.updateBook(book, signal);
+				for (const filepath of book.props.filepaths ?? [book.Filepath]) {
+					this.catalog.set(
+						filepath,
+						new Book({ ...book.props, filepath, filepaths: undefined }),
+					);
+				}
+				if (
+					this.plugin.settings.onlineLookupEnabled &&
+					(book.props.metaDataStatus === MetadataUpdateStatus.FAILED ||
+						book.props.metaDataStatus === MetadataUpdateStatus.PARTIAL)
+				) {
+					this.problems.push(`Could not finish online lookup: ${book.Title}`);
+				}
+				if (this.plugin.settings.onlineLookupEnabled) this.notify(true);
 			} catch (err) {
 				throwIfAborted(signal);
+				this.problems.push(`Could not finish online lookup: ${book.Title}`);
 				console.error(`Failed to update metadata for ${book.Filepath}: `, err);
 			}
 		}
 		throwIfAborted(signal);
+		this.reportStatus('Saving library…');
 		await this.exportCatalog(successfullyScannedFolders, signal);
+		this.reportStatus(
+			this.problems.length ? 'Refresh finished with issues' : 'Library up to date',
+		);
 	}
 
 	async exportCatalog(
@@ -98,12 +178,7 @@ export class LibraryService {
 			const diskCatalog = await this.readCatalogFromDisk();
 			throwIfAborted(signal);
 			const mergedCatalog = new Map<string, Book>();
-			const diskBooks = new Map(
-				Object.entries(diskCatalog?.data ?? {}).map(([filepath, record]) => [
-					filepath,
-					new Book(record),
-				]),
-			);
+			const diskBooks = expandBooks(diskCatalog?.data ?? {});
 
 			for (const [filepath, book] of diskBooks) {
 				if (
@@ -129,7 +204,10 @@ export class LibraryService {
 			const payload: CatalogFile = {
 				lastUpdated,
 				data: Object.fromEntries(
-					Array.from(mergedCatalog, ([filepath, book]) => [filepath, book.props]),
+					Array.from(groupBooks(mergedCatalog), ([identity, book]) => [
+						identity,
+						book.props,
+					]),
 				),
 			};
 			const tmp = `${this.plugin.catalogPath}.${process.pid}.${Date.now()}.${temporaryFileCounter++}.tmp`;
@@ -145,8 +223,9 @@ export class LibraryService {
 				throw error;
 			}
 
-			this.catalog = mergedCatalog;
+			this.catalog = expandBooks(payload.data);
 			this.lastUpdated = lastUpdated;
+			this.notify(true);
 		}, signal);
 	}
 
@@ -155,15 +234,11 @@ export class LibraryService {
 			const parsed = await this.readCatalogFromDisk();
 			if (!parsed) return;
 			this.lastUpdated = parsed.lastUpdated;
-			this.catalog = new Map(
-				Object.entries(parsed.data).map(([filepath, record]) => [
-					filepath,
-					new Book(record),
-				]),
-			);
+			this.catalog = expandBooks(parsed.data);
+			this.notify(true);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-				console.error('Failed to read catalog, starting fresh', error);
+				throw error;
 			}
 		}
 	}
@@ -280,7 +355,7 @@ export class LibraryService {
 	}
 
 	private *pendingBooks(): Generator<Book> {
-		for (const book of this.catalog.values()) {
+		for (const book of groupBooks(this.catalog).values()) {
 			if (book.canUpdate) {
 				yield book;
 			}

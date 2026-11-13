@@ -3,6 +3,7 @@ import { BookMetadata } from '../../model/metadata';
 
 export interface BookProps {
 	filepath: string;
+	filepaths?: readonly string[];
 	title: string;
 	author: string;
 	isbn10?: ISBN10;
@@ -24,6 +25,7 @@ export enum MetadataUpdateStatus {
 
 export class Book {
 	private readonly filepath: string;
+	private readonly filepaths?: readonly string[];
 	private title: string;
 	private author: string;
 	private isbn10?: ISBN10;
@@ -36,6 +38,7 @@ export class Book {
 
 	constructor(props: BookProps) {
 		this.filepath = props.filepath;
+		this.filepaths = props.filepaths && Object.freeze([...props.filepaths]);
 		this.title = props.title;
 		this.author = props.author;
 		this.isbn10 = props.isbn10;
@@ -50,6 +53,7 @@ export class Book {
 	get props(): BookProps {
 		return {
 			filepath: this.filepath,
+			filepaths: this.filepaths,
 			title: this.title,
 			author: this.author,
 			isbn10: this.isbn10,

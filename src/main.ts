@@ -1,7 +1,8 @@
-import { Editor, MarkdownView, MarkdownFileInfo, Plugin } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 import { DEFAULT_SETTINGS, DesktopLibrarySettings, DesktopLibrarySettingTab } from './settings';
 import { join } from 'node:path';
-import { LibraryModal } from './components/LibraryModal';
+import { LibraryView, LIBRARY_VIEW_TYPE } from './ui/LibraryView';
+import { migratePdfTabs } from './ui/native-pdf';
 import { LibraryService } from './logic/LibraryService';
 
 export default class DesktopLibrary extends Plugin {
@@ -19,67 +20,35 @@ export default class DesktopLibrary extends Plugin {
 
 		this.library = new LibraryService(this);
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('library', 'My library', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new LibraryModal(this.app).open();
-		});
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new LibraryModal(this.app).open();
-			},
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, _ctx: MarkdownView | MarkdownFileInfo) => {
-				editor.replaceSelection('Sample editor command');
-			},
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new LibraryModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			},
-		});
-
+		this.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, this));
+		const openLibrary = () => {
+			void this.openLibrary().catch((error) => {
+				new Notice('Could not open My Library.');
+				console.error(error);
+			});
+		};
+		this.addRibbonIcon('library', 'Open My Library', openLibrary);
+		this.addCommand({ id: 'open-library', name: 'Open My Library', callback: openLibrary });
+		// Preserve existing opening command IDs for saved hotkeys.
+		for (const id of ['open-modal-simple', 'open-modal-complex']) {
+			this.addCommand({ id, name: 'Open My Library (legacy)', callback: openLibrary });
+		}
 		this.addCommand({
 			id: 'refresh-library',
-			name: 'Refresh book library',
-			callback: () => {
-				void this.refreshLibrary().catch((error) => {
-					if (!this.unloaded) console.error('Failed to refresh book library', error);
-				});
-			},
+			name: 'Refresh Library',
+			callback: () => this.refreshLibrary(),
 		});
+		const status = this.addStatusBarItem();
+		status.setText('Library: ready');
+		this.register(
+			this.library.subscribe(() => status.setText(`Library: ${this.library.status}`)),
+		);
 
 		this.app.workspace.onLayoutReady(() => {
 			if (this.unloaded) return;
+			void migratePdfTabs(this.app, () => this.unloaded);
 			void this.refreshLibrary().catch((error) => {
-				if (!this.unloaded) console.error('Failed to refresh book library', error);
+				if (!this.unloaded) console.error('Failed to refresh library', error);
 			});
 		});
 	}
@@ -89,12 +58,40 @@ export default class DesktopLibrary extends Plugin {
 		this.refreshController.abort();
 	}
 
-	private refreshLibrary(): Promise<void> {
-		if (this.refreshPromise) return this.refreshPromise;
+	refreshError?: string;
 
-		this.refreshPromise = this.loadAndRefreshLibrary().finally(() => {
-			this.refreshPromise = undefined;
-		});
+	get isRefreshing(): boolean {
+		return this.refreshPromise !== undefined;
+	}
+
+	async openLibrary(): Promise<void> {
+		let leaf = this.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE)[0];
+		if (!leaf) {
+			leaf = this.app.workspace.getLeaf('tab');
+			await leaf.setViewState({ type: LIBRARY_VIEW_TYPE, active: true });
+		}
+		await this.app.workspace.revealLeaf(leaf);
+	}
+
+	refreshLibrary(): Promise<void> {
+		if (this.refreshPromise) return this.refreshPromise;
+		if (this.unloaded) return Promise.resolve();
+		this.refreshError = undefined;
+		this.refreshPromise = Promise.resolve()
+			.then(() => this.loadAndRefreshLibrary())
+			.catch((error: unknown) => {
+				if (this.unloaded) return;
+				this.refreshError =
+					error instanceof Error ? error.message : 'Library refresh failed';
+				this.library.reportStatus('Refresh failed');
+				new Notice('Library refresh failed. Open My Library for details.');
+				console.error('Failed to refresh library', error);
+			})
+			.finally(() => {
+				this.refreshPromise = undefined;
+				if (!this.unloaded) this.library.reportStatus(this.library.status);
+			});
+		this.library.reportStatus('Loading library…');
 		return this.refreshPromise;
 	}
 
