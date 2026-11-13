@@ -1,4 +1,5 @@
 import { ISBN10, ISBN13 } from '../../model/isbn';
+import { BookMetadata } from '../../model/metadata';
 
 export interface BookProps {
 	filepath: string;
@@ -137,8 +138,19 @@ export class Book {
 		);
 	}
 
-	get LastUpdated(): number|undefined {
+	get LastUpdated(): number | undefined {
 		return this.lastUpdateAttempt;
+	}
+
+	update(metadata: BookMetadata): void {
+		this.title = metadata.title;
+		if (metadata.authors.length > 0) {
+			this.author = metadata.authors.join(', ');
+		}
+
+		const year = metadata.publishedDate?.match(/^\d{4}/)?.[0];
+		if (year) this.year = Number(year);
+		if (metadata.publisher) this.publisher = metadata.publisher;
 	}
 
 	hasISBN(): boolean {

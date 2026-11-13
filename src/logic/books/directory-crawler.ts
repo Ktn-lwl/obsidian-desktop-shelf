@@ -3,19 +3,22 @@ import { basename, extname, join } from 'node:path';
 import { Book, BookProps } from './book';
 import { ISBNData } from '../../model/isbn';
 import { discoverISBNs } from './isbn-extractor';
+import { throwIfAborted } from '../../utils/cancellation';
 
 /**
  * Recursively yield all pdfs contained in a parent directory
  * @param rootDir The parent directory
  */
-export async function* getPDFPaths(rootDir: string): AsyncGenerator<string> {
-	const contents = await opendir(rootDir);
+export async function* getPDFPaths(rootDir: string, signal?: AbortSignal): AsyncGenerator<string> {
+	throwIfAborted(signal);
+	const dir = await opendir(rootDir);
 
-	for await (const dirent of contents) {
-		const fullPath = join(dirent.parentPath, dirent.name);
+	for await (const dirent of dir) {
+		throwIfAborted(signal);
+		const fullPath = join(rootDir, dirent.name);
 
 		if (dirent.isDirectory()) {
-			yield* getPDFPaths(fullPath);
+			yield* getPDFPaths(fullPath, signal);
 		} else if (dirent.isFile() && extname(dirent.name).toLowerCase() === '.pdf') {
 			yield fullPath;
 		}
@@ -28,8 +31,8 @@ export async function* getPDFPaths(rootDir: string): AsyncGenerator<string> {
  * @param filePath
  * @returns returns a book object wrapped in a promise or null if no ISBN was found
  */
-export async function createBook(filePath: string): Promise<Book | null> {
-	const isbns: ISBNData = await discoverISBNs(filePath);
+export async function createBook(filePath: string, signal?: AbortSignal): Promise<Book | null> {
+	const isbns: ISBNData = await discoverISBNs(filePath, signal);
 
 	if (isbns.ISBN10 !== null || isbns.ISBN13 !== null) {
 		const props: BookProps = {
@@ -38,6 +41,7 @@ export async function createBook(filePath: string): Promise<Book | null> {
 			author: 'Unknown',
 			isbn10: isbns.ISBN10 ?? undefined,
 			isbn13: isbns.ISBN13 ?? undefined,
+			metaDataStatus: undefined,
 		};
 		return new Book(props);
 	}

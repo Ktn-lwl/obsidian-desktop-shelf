@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type {
 	App as ObsidianApp,
 	ButtonComponent as ObsidianButtonComponent,
@@ -13,9 +14,13 @@ import type {
  * JavaScript runtime used by Vitest.
  */
 if (!Array.prototype.last) {
-	Array.prototype.last = function <T>(this: T[]): T | undefined {
-		return this[this.length - 1];
-	};
+	Object.defineProperty(Array.prototype, 'last', {
+		configurable: true,
+		value: function <T>(this: T[]): T | undefined {
+			return this[this.length - 1];
+		},
+		writable: true,
+	});
 }
 
 /**
@@ -85,6 +90,10 @@ export const App = MockApp as unknown as {
 export const Notice = vi.fn(function (this: { message: string }, message: string) {
 	this.message = message;
 });
+
+export const loadPdfJs = vi.fn(async () => pdfjs);
+
+export const requestUrl = vi.fn();
 
 /**
  * Modal

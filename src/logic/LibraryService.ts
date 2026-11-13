@@ -1,11 +1,15 @@
 import MyPlugin from '../main';
 import { createBook, getPDFPaths } from './books/directory-crawler';
 import { Book, MetadataUpdateStatus } from './books/book';
-import { mkdir, writeFile, readFile, rename } from 'node:fs/promises';
+import { mkdir, open, writeFile, readFile, rename, unlink } from 'node:fs/promises';
 import { CatalogFile } from '../model';
 import { EgressClient } from './network';
-import { NotFoundError } from '../model/errors';
 import { isAbsolute, relative, sep } from 'node:path';
+import { delay, throwIfAborted } from '../utils/cancellation';
+
+const CATALOG_LOCK_TIMEOUT_MS = 15_000;
+const CATALOG_LOCK_RETRY_MS = 100;
+let temporaryFileCounter = 0;
 
 export class LibraryService {
 	private readonly plugin: MyPlugin;
@@ -18,29 +22,38 @@ export class LibraryService {
 		this.client = new EgressClient(plugin);
 	}
 
-	async updateCatalog(): Promise<void> {
+	async updateCatalog(signal?: AbortSignal): Promise<void> {
+		throwIfAborted(signal);
 		const updatedCatalog = new Map<string, Book>();
+		const successfullyScannedFolders: string[] = [];
 
 		for (const folder of this.plugin.settings.watchedFolders) {
+			throwIfAborted(signal);
 			const folderCatalog = new Map<string, Book>();
 			try {
-				for await (const filepath of getPDFPaths(folder)) {
+				for await (const filepath of getPDFPaths(folder, signal)) {
+					throwIfAborted(signal);
 					try {
-						const book = this.catalog.get(filepath) ?? (await createBook(filepath));
+						const book =
+							this.catalog.get(filepath) ?? (await createBook(filepath, signal));
 
 						if (book === null) {
 							continue;
 						}
 
+						throwIfAborted(signal);
 						folderCatalog.set(filepath, book);
 					} catch (error) {
+						throwIfAborted(signal);
 						console.error(`Failed to process PDF: ${filepath}`, error);
 					}
 				}
 				for (const [filepath, book] of folderCatalog) {
 					updatedCatalog.set(filepath, book);
 				}
+				successfullyScannedFolders.push(folder);
 			} catch (error) {
+				throwIfAborted(signal);
 				console.error(`Failed to scan watched folder: ${folder}`, error);
 				for (const [filepath, book] of this.catalog) {
 					const pathFromFolder = relative(folder, filepath);
@@ -56,39 +69,91 @@ export class LibraryService {
 			}
 		}
 
+		throwIfAborted(signal);
 		this.catalog = updatedCatalog;
 		this.lastUpdated = Date.now();
 
 		for (const book of this.pendingBooks()) {
 			try {
-				await this.updateBook(book);
+				throwIfAborted(signal);
+				await this.updateBook(book, signal);
 			} catch (err) {
+				throwIfAborted(signal);
 				console.error(`Failed to update metadata for ${book.Filepath}: `, err);
 			}
 		}
-		await this.exportCatalog();
+		throwIfAborted(signal);
+		await this.exportCatalog(successfullyScannedFolders, signal);
 	}
 
-	async exportCatalog(): Promise<void> {
-		const payload: CatalogFile = {
-			lastUpdated: this.lastUpdated,
-			data: Object.fromEntries(
-				Array.from(this.catalog, ([filepath, book]) => [filepath, book.props]),
-			),
-		};
-
+	async exportCatalog(
+		successfullyScannedFolders: string[] = [],
+		signal?: AbortSignal,
+	): Promise<void> {
+		throwIfAborted(signal);
 		await mkdir(this.plugin.catalogDir, { recursive: true });
 
-		// write to a temp file, then rename, so a crash mid-write can't corrupt Catalog.json
-		const tmp = `${this.plugin.catalogPath}.tmp`;
-		await writeFile(tmp, JSON.stringify(payload, null, 2), 'utf-8');
-		await rename(tmp, this.plugin.catalogPath);
+		await this.withCatalogLock(async () => {
+			throwIfAborted(signal);
+			const diskCatalog = await this.readCatalogFromDisk();
+			throwIfAborted(signal);
+			const mergedCatalog = new Map<string, Book>();
+			const diskBooks = new Map(
+				Object.entries(diskCatalog?.data ?? {}).map(([filepath, record]) => [
+					filepath,
+					new Book(record),
+				]),
+			);
+
+			for (const [filepath, book] of diskBooks) {
+				if (
+					!successfullyScannedFolders.some((folder) =>
+						isPathWithinFolder(folder, filepath),
+					)
+				) {
+					mergedCatalog.set(filepath, book);
+				}
+			}
+
+			for (const [filepath, book] of this.catalog) {
+				const diskBook = diskBooks.get(filepath);
+				mergedCatalog.set(
+					filepath,
+					!diskBook || (book.LastUpdated ?? 0) > (diskBook.LastUpdated ?? 0)
+						? book
+						: diskBook,
+				);
+			}
+
+			const lastUpdated = Math.max(Date.now(), (diskCatalog?.lastUpdated ?? 0) + 1);
+			const payload: CatalogFile = {
+				lastUpdated,
+				data: Object.fromEntries(
+					Array.from(mergedCatalog, ([filepath, book]) => [filepath, book.props]),
+				),
+			};
+			const tmp = `${this.plugin.catalogPath}.${process.pid}.${Date.now()}.${temporaryFileCounter++}.tmp`;
+			try {
+				throwIfAborted(signal);
+				await writeFile(tmp, JSON.stringify(payload, null, 2), 'utf-8');
+				throwIfAborted(signal);
+				await rename(tmp, this.plugin.catalogPath);
+			} catch (error) {
+				await unlink(tmp).catch((cleanupError: NodeJS.ErrnoException) => {
+					if (cleanupError.code !== 'ENOENT') throw cleanupError;
+				});
+				throw error;
+			}
+
+			this.catalog = mergedCatalog;
+			this.lastUpdated = lastUpdated;
+		}, signal);
 	}
 
 	async importCatalog(): Promise<void> {
 		try {
-			const raw = await readFile(this.plugin.catalogPath, 'utf-8');
-			const parsed = JSON.parse(raw) as CatalogFile;
+			const parsed = await this.readCatalogFromDisk();
+			if (!parsed) return;
 			this.lastUpdated = parsed.lastUpdated;
 			this.catalog = new Map(
 				Object.entries(parsed.data).map(([filepath, record]) => [
@@ -103,27 +168,110 @@ export class LibraryService {
 		}
 	}
 
-	async updateBook(book: Book): Promise<void> {
+	private async readCatalogFromDisk(): Promise<CatalogFile | undefined> {
+		let raw: string;
+		try {
+			raw = await readFile(this.plugin.catalogPath, 'utf-8');
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+			throw error;
+		}
+
+		const parsed: unknown = JSON.parse(raw);
+		if (
+			typeof parsed !== 'object' ||
+			parsed === null ||
+			typeof (parsed as CatalogFile).lastUpdated !== 'number' ||
+			typeof (parsed as CatalogFile).data !== 'object' ||
+			(parsed as CatalogFile).data === null ||
+			Array.isArray((parsed as CatalogFile).data)
+		) {
+			throw new Error(`Catalog has an invalid format: ${this.plugin.catalogPath}`);
+		}
+		return parsed as CatalogFile;
+	}
+
+	private async withCatalogLock<T>(
+		operation: () => Promise<T>,
+		signal?: AbortSignal,
+	): Promise<T> {
+		const lockPath = `${this.plugin.catalogPath}.lock`;
+		const deadline = Date.now() + CATALOG_LOCK_TIMEOUT_MS;
+		let lockHandle: Awaited<ReturnType<typeof open>> | undefined;
+
+		while (!lockHandle) {
+			throwIfAborted(signal);
+			let candidate;
+			try {
+				candidate = await open(lockPath, 'wx');
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+				if (Date.now() >= deadline) {
+					throw new Error(
+						`Timed out waiting for the catalog lock at ${lockPath}. If no plugin process is using the catalog, remove this stale lock file and retry.`,
+					);
+				}
+				await delay(CATALOG_LOCK_RETRY_MS, signal);
+				continue;
+			}
+
+			try {
+				await candidate.writeFile(
+					JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }),
+					'utf-8',
+				);
+				lockHandle = candidate;
+			} catch (error) {
+				await candidate.close();
+				await unlink(lockPath);
+				throw error;
+			}
+		}
+
+		try {
+			return await operation();
+		} finally {
+			try {
+				await lockHandle.close();
+			} finally {
+				await unlink(lockPath);
+			}
+		}
+	}
+
+	async updateBook(book: Book, signal?: AbortSignal): Promise<void> {
+		throwIfAborted(signal);
+		if (this.plugin.settings.onlineLookupEnabled !== true) return;
 		const isbn = book.ISBN13 ?? book.ISBN10;
 		if (!isbn) return; // stays PENDING
 
+		book.LastUpdateAttempt = Date.now();
+		let metadataApplied = false;
+
 		try {
-			const image = await this.client.downloadImage(isbn);
-			const metadata = await this.client.fetchMetadata(isbn);
+			const metadata = await this.client.fetchMetadata(isbn, signal);
+			throwIfAborted(signal);
 			if (metadata === undefined) {
-				throw new Error(`No metadata was retrieved for ISBN ${isbn}`);
+				book.MetaDataUpdateStatus = MetadataUpdateStatus.MISSING;
+				return;
 			}
 
-			if (image !== undefined) book.CoverImgSrc = image;
+			book.update(metadata);
+			metadataApplied = true;
+
+			if (metadata.coverUrl) {
+				const image = await this.client.downloadImage(metadata.coverUrl, isbn, signal);
+				throwIfAborted(signal);
+				if (image) book.CoverImgSrc = image;
+			}
+
 			book.MetaDataUpdateStatus = MetadataUpdateStatus.SUCCESS;
-			book.LastUpdateAttempt = Date.now();
 		} catch (error) {
+			throwIfAborted(signal);
 			console.error(`Failed to update metadata for ISBN ${isbn}`, error);
-			book.MetaDataUpdateStatus =
-				error instanceof NotFoundError
-					? MetadataUpdateStatus.MISSING // permanent, don't retry
-					: MetadataUpdateStatus.FAILED; // transient, retry later
-			book.LastUpdateAttempt = Date.now();
+			book.MetaDataUpdateStatus = metadataApplied
+				? MetadataUpdateStatus.PARTIAL
+				: MetadataUpdateStatus.FAILED;
 		}
 	}
 
@@ -138,4 +286,13 @@ export class LibraryService {
 			}
 		}
 	}
+}
+
+function isPathWithinFolder(folder: string, filepath: string): boolean {
+	const pathFromFolder = relative(folder, filepath);
+	return (
+		pathFromFolder !== '..' &&
+		!pathFromFolder.startsWith(`..${sep}`) &&
+		!isAbsolute(pathFromFolder)
+	);
 }
