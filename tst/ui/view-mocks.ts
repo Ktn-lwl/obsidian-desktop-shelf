@@ -69,6 +69,9 @@ export class TestElement {
 	all(): TestElement[] {
 		return this.children.flatMap((el) => [el, ...el.all()]);
 	}
+	toggle(show: boolean): void {
+		this.hidden = !show;
+	}
 	focus(): void {}
 	getContext(): object {
 		return {};

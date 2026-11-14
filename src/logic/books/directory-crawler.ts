@@ -29,22 +29,18 @@ export async function* getPDFPaths(rootDir: string, signal?: AbortSignal): Async
  * Creates a book from a pdf and returns a book object with the ISBN set, but
  * other metadate uninitialized.
  * @param filePath
- * @returns returns a book object wrapped in a promise or null if no ISBN was found
+ * @returns returns a book object, including unidentified PDFs for manual identification
  */
-export async function createBook(filePath: string, signal?: AbortSignal): Promise<Book | null> {
+export async function createBook(filePath: string, signal?: AbortSignal): Promise<Book> {
 	const isbns: ISBNData = await discoverISBNs(filePath, signal);
 
-	if (isbns.ISBN10 !== null || isbns.ISBN13 !== null) {
-		const props: BookProps = {
-			filepath: filePath,
-			title: basename(filePath),
-			author: 'Unknown',
-			isbn10: isbns.ISBN10 ?? undefined,
-			isbn13: isbns.ISBN13 ?? undefined,
-			metaDataStatus: undefined,
-		};
-		return new Book(props);
-	}
-
-	return null;
+	const props: BookProps = {
+		filepath: filePath,
+		title: basename(filePath),
+		author: 'Unknown',
+		isbn10: isbns.ISBN10 ?? undefined,
+		isbn13: isbns.ISBN13 ?? undefined,
+		metaDataStatus: undefined,
+	};
+	return new Book(props);
 }

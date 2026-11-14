@@ -18,12 +18,22 @@ export class AddFolderModal extends Modal {
 	constructor(app: App, onSubmit: (result: string) => void) {
 		super(app);
 		this.onSubmit = onSubmit;
+		this.modalEl.addClass('desktop-shelf-folder-modal');
+		this.contentEl.addClass('desktop-shelf-folder');
+		this.setTitle('Add a folder');
+		this.contentEl.createEl('p', {
+			cls: 'desktop-shelf-folder-description',
+			text: 'Watch a local folder for books. Files stay in their original location.',
+		});
 
 		let submitButton!: ButtonComponent;
 		let textBox!: TextComponent;
 
 		//TODO: Case insensitivity
 		new Setting(this.contentEl)
+			.setClass('desktop-shelf-folder-path')
+			.setName('Folder path')
+			.setDesc('Subfolders are scanned automatically. Start typing to see matching folders.')
 			.addText((txt) => {
 				txt.onChange((value: string) => {
 					this.folderPath = value.trim();
@@ -40,13 +50,18 @@ export class AddFolderModal extends Modal {
 					}
 				});
 
-				txt.setPlaceholder('/path/to/directory/');
-				txt.setValue(`${homedir().replaceAll('\\', '/')}/`);
+				txt.setPlaceholder(`${homedir().replaceAll('\\', '/')}/`);
+				txt.inputEl.ariaLabel = 'Folder path';
+				txt.inputEl.spellcheck = false;
 				textBox = txt;
-			})
+			});
+		new Setting(this.contentEl)
+			.setClass('desktop-shelf-folder-actions')
+			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
 			.addButton((btn) => {
 				submitButton = btn
 					.setButtonText('Add folder')
+					.setCta()
 					.onClick(() => this.submit())
 					.setDisabled(this.submitButtonIsDisabled());
 			});

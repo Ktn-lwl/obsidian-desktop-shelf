@@ -15,6 +15,7 @@ describe('LibraryService view integration', () => {
 				catalogPath,
 				JSON.stringify({
 					lastUpdated: 1,
+					manual: { overrides: {}, identifications: {}, includedFiles: [filepath] },
 					data: {
 						[filepath]: { filepath, title: 'Original title', author: 'An author' },
 					},
@@ -51,6 +52,7 @@ describe('LibraryService view integration', () => {
 				catalogPath,
 				JSON.stringify({
 					lastUpdated: 1,
+					manual: { overrides: {}, identifications: {}, includedFiles: [filepath] },
 					data: {
 						[filepath]: { filepath, title: 'Shared book', author: 'An author' },
 					},
