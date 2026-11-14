@@ -11,7 +11,7 @@ A library plugin that syncs textbooks from anywhere on the local filesystem and 
 ## Using My Library
 
 1. Select the library ribbon icon or run **Open My Library** from the command palette.
-2. Select **Add a folder** and choose a local folder containing PDFs. The library scans its subfolders without copying PDFs into your vault.
+2. Open **Settings → Desktop Shelf → Watched folders → Add folder** and enter a local folder containing PDFs. The library scans its subfolders without copying PDFs into your vault.
 3. Search by title, author, ISBN, or filename, and sort by title or author.
 4. Select a book to open its PDF in an Obsidian tab. Select **Book details** to see metadata and use **Show in folder**.
 5. Select **Refresh** to scan again. The shelf shows progress and reports folders or books that could not be processed.
@@ -24,7 +24,18 @@ Each ISBN appears once in the library, even when copies exist in multiple folder
 
 The library opens in a workspace tab and reuses that tab when opened again. Cached books remain available during refresh. Covers load from the local cache as you scroll. When no downloaded cover is available, the first PDF page becomes the cover. These previews are generated locally only when needed, cached, and refreshed when the PDF changes. Unreadable PDFs retain the book title placeholder.
 
-Online lookup is optional and disabled by default; enable it in the plugin settings to fetch metadata and covers. This version only lists PDFs with detected ISBNs. Manual identification and exclusions are planned.
+Online lookup is optional and disabled by default; enable it in the plugin settings to fetch metadata and covers. Only PDFs with a valid detected ISBN enter the library automatically. Other PDFs stay outside the library until you explicitly include them or assign an ISBN.
+
+## Manual library edits
+
+- Open **Add books** to review PDFs without a detected ISBN and search by title or file path. Select **Include** to add one without an ISBN, or **Assign ISBN** to enter an ISBN-10 or ISBN-13. If the ISBN already exists, the dialog previews the merge before you save. Every file location is retained.
+- Use **Book details → Edit details** to change the title, author, publisher, or publication year. Changes apply to the shared ISBN entry, survive online refreshes, and are shared across vaults using the same catalog. **Reset** reverts a field to scanned or online details when you save.
+- Each file location has **Correct ISBN**. A correction affects that copy only; other copies retain their current ISBN. Online lookup runs after identification only when enabled in settings.
+- For books explicitly included without an identifier, **Book details → Remove from library** revokes that inclusion and returns the file to **Add books**. The PDF stays on disk.
+
+Scans cache unidentified results separately from library entries and use file size and modification time to avoid repeating ISBN extraction for unchanged PDFs. Cached PDFs awaiting inclusion do not appear on the shelf or count as library books. Directory traversal still runs to discover new PDFs. Manually assigned ISBNs remain authoritative when a file changes; automatic identifications are rescanned when the file changes. Existing catalog entries acquire a file fingerprint on their next scan without repeating extraction.
+
+Manual changes are saved under the catalog lock against the latest on-disk state. Each save patches only the changed fields, preserving other vaults’ edits; the most recent save wins when two vaults edit the same field. Explicit inclusions and ISBN assignments are stored separately from scan results so stale refreshes cannot undo them. Existing unidentified records from earlier catalogs move to the pending list unless explicitly included.
 
 ## Technical Overview
 
@@ -46,7 +57,7 @@ Each found PDF is scanned page-by-page through the first and last 10% of its pag
 
 Identified ISBNs get their metadata pulled from Open Library and cached locally for rendering. Covers are fetched separately from the Google Books content endpoint and downloaded locally when available; missing covers do not prevent metadata from being saved.
 
-For unidentified PDFs, show the user the list so they can either manually supply an ISBN or mark the file as "not a book" to exclude it from future scans. This keeps a bad regex match from silently mislabeling something forever.
+Unidentified PDFs remain outside the library in **Add books**, where users can supply an ISBN or explicitly include a file. This keeps a bad regex match from silently mislabeling something forever.
 
 ### Book metadata and covers
 
@@ -78,7 +89,7 @@ Open Library metadata requests are serialized and spaced one second apart. Trans
 
 ## Stretch Goals
 
-- Customizable book covers, titles, and authors (manual overrides on top of Open Library data)
+- Customizable book covers
 - Per-vault reading lists ("playlists") built from the shared catalog
 
 ## Timeline

@@ -6,6 +6,7 @@ import type DesktopLibrary from '../../src/main';
 import { LibraryService } from '../../src/logic/LibraryService';
 import { Book } from '../../src/logic/books/book';
 import type { CatalogFile } from '../../src/model';
+import { parseManualISBN } from '../../src/logic/manual-state';
 
 let testDirectory: string;
 
@@ -18,9 +19,23 @@ function makePlugin(watchedFolders: string[] = []): DesktopLibrary {
 	} as unknown as DesktopLibrary;
 }
 
-function addBook(service: LibraryService, filepath: string, title: string): void {
+function addBook(
+	service: LibraryService,
+	filepath: string,
+	title: string,
+	identified = false,
+): void {
 	const state = service as unknown as { catalog: Map<string, Book> };
-	state.catalog.set(filepath, new Book({ filepath, title, author: 'Unknown' }));
+	state.catalog.set(
+		filepath,
+		new Book({
+			filepath,
+			title,
+			author: 'Unknown',
+			lastUpdateAttempt: 100,
+			...(identified ? parseManualISBN('9780132350884') : {}),
+		}),
+	);
 }
 
 function addBookWithUpdateTime(
@@ -65,7 +80,7 @@ describe('LibraryService catalog persistence', () => {
 			vaultB.exportCatalog([join(testDirectory, 'books-b')]),
 		]);
 
-		const { data } = await readCatalog();
+		const data = (await readCatalog()).pendingFiles ?? {};
 		expect(data).toHaveProperty(join(testDirectory, 'books-a', 'a.pdf'));
 		expect(data).toHaveProperty(join(testDirectory, 'books-b', 'b.pdf'));
 	});
@@ -86,7 +101,7 @@ describe('LibraryService catalog persistence', () => {
 		state.catalog.delete(pathA);
 		await scanner.exportCatalog([rootA]);
 
-		const { data } = await readCatalog();
+		const data = (await readCatalog()).pendingFiles ?? {};
 		expect(data).not.toHaveProperty(pathA);
 		expect(data).toHaveProperty(pathB);
 	});
@@ -105,7 +120,7 @@ describe('LibraryService catalog persistence', () => {
 		await newerVault.exportCatalog([root]);
 		await olderVault.exportCatalog([root]);
 
-		const { data } = await readCatalog();
+		const data = (await readCatalog()).pendingFiles ?? {};
 		expect(data[filepath]?.title).toBe('Newer title');
 	});
 
@@ -114,7 +129,7 @@ describe('LibraryService catalog persistence', () => {
 		const root = join(testDirectory, 'unavailable-books');
 		const filepath = join(root, 'retained.pdf');
 		const initial = new LibraryService(makePlugin());
-		addBookWithUpdateTime(initial, filepath, 'Old title', 100);
+		addBook(initial, filepath, 'Old title', true);
 		await initial.exportCatalog();
 		const service = new LibraryService(makePlugin([root]));
 		await service.importCatalog();
@@ -123,14 +138,14 @@ describe('LibraryService catalog persistence', () => {
 			book.LastUpdateAttempt = 200;
 		});
 		await service.updateCatalog();
-		expect((await readCatalog()).data[filepath]?.title).toBe('Updated title');
+		expect((await readCatalog()).data['isbn:9780132350884']?.title).toBe('Updated title');
 	});
 
 	it('does not export the catalog when cancelled during metadata updates', async () => {
 		testDirectory = await mkdtemp(join(tmpdir(), 'desktop-shelf-catalog-'));
 		const root = join(testDirectory, 'unavailable-books');
 		const initial = new LibraryService(makePlugin());
-		addBook(initial, join(root, 'retained.pdf'), 'Local title');
+		addBook(initial, join(root, 'retained.pdf'), 'Local title', true);
 		await initial.exportCatalog();
 		const before = await readCatalog();
 		const service = new LibraryService(makePlugin([root]));
@@ -159,7 +174,7 @@ describe('LibraryService catalog persistence', () => {
 		await service.importCatalog();
 		await service.updateCatalog();
 
-		const { data } = await readCatalog();
+		const data = (await readCatalog()).pendingFiles ?? {};
 		expect(data).toHaveProperty(filepath);
 	});
 });

@@ -1,17 +1,18 @@
-import { ItemView, Notice, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type DesktopLibrary from '../main';
 import type { BookProps } from '../logic/books/book';
-import { AddFolderModal } from '../components/AddFolderModal';
 import { BookDetailsModal } from './BookDetailsModal';
 import { openBook } from './local-files';
 import { BookCard } from './BookCard';
 import { selectBooks, type BookSort } from './book-query';
+import { AddBooksModal } from './AddBooksModal';
 import { bookIdentity } from '../logic/books/book-identity';
 
 export const LIBRARY_VIEW_TYPE = 'desktop-shelf-library';
 
 export class LibraryView extends ItemView {
 	private lastBooks?: ReadonlyArray<Readonly<BookProps>>;
+	private addBooksButton!: HTMLButtonElement;
 	private lastQuery?: string;
 	private lastSort?: BookSort;
 	private visibleCount = 0;
@@ -70,12 +71,16 @@ export class LibraryView extends ItemView {
 			this.sort = sort.value === 'author' ? 'author' : 'title';
 			this.renderBooks();
 		});
+		this.addBooksButton = toolbar.createEl('button', { text: 'Add books' });
+		this.registerDomEvent(this.addBooksButton, 'click', () =>
+			new AddBooksModal(this.app, this.plugin.library.edits, () => {
+				void this.plugin.refreshLibrary();
+			}).open(),
+		);
 		this.refreshButton = toolbar.createEl('button', { text: 'Refresh' });
 		this.registerDomEvent(this.refreshButton, 'click', () => {
 			void this.plugin.refreshLibrary();
 		});
-		const add = toolbar.createEl('button', { text: 'Add a folder' });
-		this.registerDomEvent(add, 'click', () => this.addFolder());
 		this.status = this.contentEl.createDiv({
 			cls: 'desktop-shelf-status',
 			attr: { role: 'status', 'aria-live': 'polite' },
@@ -123,28 +128,6 @@ export class LibraryView extends ItemView {
 		this.lastBooks = undefined;
 	}
 
-	private addFolder(): void {
-		new AddFolderModal(this.app, (folder) => {
-			void this.saveFolder(folder);
-		}).open();
-	}
-
-	private async saveFolder(folder: string): Promise<void> {
-		const previous = [...this.plugin.settings.watchedFolders];
-		try {
-			if (!previous.includes(folder)) {
-				this.plugin.settings.watchedFolders = [...previous, folder];
-				await this.plugin.saveSettings();
-			}
-			if (this.plugin.isRefreshing) await this.plugin.refreshLibrary();
-			await this.plugin.refreshLibrary();
-		} catch (error) {
-			this.plugin.settings.watchedFolders = previous;
-			new Notice('Could not save the watched folder. Try again.');
-			console.error('Failed to save watched folder', error);
-		}
-	}
-
 	private renderBooks(): void {
 		const library = this.plugin.library;
 		const allBooks = library.books;
@@ -152,6 +135,7 @@ export class LibraryView extends ItemView {
 			allBooks !== this.lastBooks ||
 			this.query !== this.lastQuery ||
 			this.sort !== this.lastSort;
+		this.addBooksButton.setText(`Add books (${library.edits.candidates.length})`);
 		const books = changed ? selectBooks(allBooks, this.query, this.sort) : undefined;
 		if (books) this.visibleCount = books.length;
 		this.refreshButton.disabled = this.plugin.isRefreshing;
@@ -183,8 +167,8 @@ export class LibraryView extends ItemView {
 			hasQuery
 				? 'No books match your search.'
 				: this.plugin.settings.watchedFolders.length
-					? 'No identified books yet. Select Refresh to scan your folders. PDFs need an ISBN to appear in this version.'
-					: 'Add a folder to build your library. Your PDFs stay in their original folders.',
+					? 'No books yet. Refresh to find ISBN matches, or select Add books to include a PDF.'
+					: 'Add a watched folder in Desktop Shelf settings to build your library. Your PDFs stay in their original folders.',
 		);
 		const paths = new Set(books.map(bookIdentity));
 		for (const [path, { card }] of this.cards) {
@@ -203,7 +187,10 @@ export class LibraryView extends ItemView {
 					this.grid,
 					book,
 					this.plugin.imagesDir,
-					() => new BookDetailsModal(this.app, book).open(),
+					() =>
+						new BookDetailsModal(this.app, book, library.edits, () => {
+							void this.plugin.refreshLibrary();
+						}).open(),
 					() => {
 						void openBook(this.app, book);
 					},

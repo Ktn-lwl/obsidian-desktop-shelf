@@ -32,6 +32,18 @@ export class FakeEl {
 	disabled = false;
 	placeholder = '';
 	innerText = '';
+	classes = new Set<string>();
+	children: FakeEl[] = [];
+	addClass(cls: string): void {
+		this.classes.add(cls);
+	}
+	createEl(_tag: string, options: { text?: string; cls?: string } = {}): FakeEl {
+		const el = new FakeEl();
+		el.innerText = options.text ?? '';
+		if (options.cls) el.addClass(options.cls);
+		this.children.push(el);
+		return el;
+	}
 
 	private listeners = new Map<string, Set<(event: any) => void>>();
 
@@ -103,6 +115,12 @@ export class Modal {
 
 	app: ObsidianApp;
 	contentEl = new FakeEl();
+	modalEl = new FakeEl();
+	title = '';
+	setTitle(title: string): this {
+		this.title = title;
+		return this;
+	}
 
 	open = vi.fn();
 	close = vi.fn();
@@ -187,6 +205,9 @@ export class ButtonComponent {
 		});
 	}
 
+	setCta(): this {
+		return this;
+	}
 	setButtonText(text: string) {
 		this.buttonText = text;
 		this.buttonEl.innerText = text;
@@ -219,7 +240,22 @@ export class ButtonComponent {
  * Setting
  */
 export class Setting {
+	name = '';
+	description = '';
+	classes = new Set<string>();
 	constructor(_containerEl: unknown) {}
+	setName(name: string): this {
+		this.name = name;
+		return this;
+	}
+	setDesc(description: string): this {
+		this.description = description;
+		return this;
+	}
+	setClass(cls: string): this {
+		this.classes.add(cls);
+		return this;
+	}
 
 	addText(callback: (text: TextComponent) => void) {
 		callback(new TextComponent());

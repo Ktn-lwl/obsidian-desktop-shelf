@@ -94,3 +94,40 @@
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 3px;
 }
+
+/* Keep folder setup aligned with Obsidian's native modal and settings controls. */
+.modal.desktop-shelf-folder-modal {
+	width: min(560px, 90vw);
+}
+.desktop-shelf-folder-description {
+	color: var(--text-muted);
+	margin: 0 0 var(--size-4-4);
+	line-height: var(--line-height-normal);
+}
+.desktop-shelf-folder .desktop-shelf-folder-path {
+	display: block;
+	border-top: 0;
+	padding: 0;
+}
+.desktop-shelf-folder-path .setting-item-control {
+	margin-top: var(--size-4-3);
+}
+.desktop-shelf-folder-path input {
+	width: 100%;
+	min-width: 0;
+	font-family: var(--font-monospace);
+}
+.desktop-shelf-folder .desktop-shelf-folder-actions {
+	margin-top: var(--size-4-6);
+	padding: var(--size-4-4) 0 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+.desktop-shelf-folder-actions .setting-item-info {
+	display: none;
+}
+.desktop-shelf-folder-actions .setting-item-control {
+	flex: 1;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+}

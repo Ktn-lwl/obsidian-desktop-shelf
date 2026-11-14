@@ -2,7 +2,9 @@ import { assertISBN10, assertISBN13 } from '../../model/isbn';
 import { Book, type BookProps, MetadataUpdateStatus } from './book';
 
 /** Normalize equivalent ISBN-10/13 identifiers to one ISBN-13 catalog key. */
-export function bookIdentity(book: Readonly<BookProps>): string {
+export function bookIdentity(
+	book: Readonly<Pick<BookProps, 'filepath' | 'isbn10' | 'isbn13'>>,
+): string {
 	const isbn13 = book.isbn13?.replace(/[\s-]/g, '');
 	try {
 		if (isbn13 && /^\d{13}$/.test(isbn13)) {

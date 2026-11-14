@@ -40,7 +40,7 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 				heading: 'Watched folders',
 				emptyState: 'No folders being watched yet.',
 				addItem: {
-					name: 'Add Folder',
+					name: 'Add folder',
 					action: () => this.openAddFolderModal(),
 				},
 				onDelete: (idx: number) => {

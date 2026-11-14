@@ -13,6 +13,7 @@ vi.mock('../../src/ui/local-files', () => ({ openBook: vi.fn() }));
 
 import { LibraryView } from '../../src/ui/LibraryView';
 import { openBook } from '../../src/ui/local-files';
+import { parseManualISBN } from '../../src/logic/manual-state';
 
 async function setup(initialBooks: BookProps[] = []) {
 	const listeners = new Set<() => void>();
@@ -29,6 +30,7 @@ async function setup(initialBooks: BookProps[] = []) {
 	const library = {
 		books: initialBooks,
 		status: 'Ready',
+		edits: { candidates: [] },
 		issues: [] as string[],
 		subscribe: (listener: () => void) => {
 			listeners.add(listener);
@@ -59,9 +61,27 @@ afterEach(() => {
 });
 
 describe('library workspace view', () => {
+	it('shows included books without a membership filter and retains the sort control', async () => {
+		const known = {
+			...book,
+			filepath: '/books/known.pdf',
+			...parseManualISBN('9780132350884'),
+		};
+		const { root, view } = await setup([book, known]);
+		expect(root.all().some((el) => el.attributes['aria-label'] === 'Filter books')).toBe(false);
+		expect(root.all().some((el) => el.text === 'All books')).toBe(false);
+		expect(root.all().some((el) => el.attributes['aria-label'] === 'Sort books')).toBe(true);
+		expect(root.all().filter((el) => el.tag === 'article')).toHaveLength(2);
+		await view.onClose();
+	});
+
 	it('shows setup guidance and responds to imported catalog updates', async () => {
 		const { root, library, update, view } = await setup();
-		expect(root.all().some((el) => el.text.includes('Add a folder to build'))).toBe(true);
+		expect(
+			root
+				.all()
+				.some((el) => el.text.includes('Add a watched folder in Desktop Shelf settings')),
+		).toBe(true);
 		library.books = [book];
 		update();
 		expect(root.all().filter((el) => el.tag === 'article')).toHaveLength(1);

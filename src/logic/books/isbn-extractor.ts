@@ -32,19 +32,14 @@ async function discoverISBNs(filePath: string, signal?: AbortSignal) {
 	const isbnData: ISBNData = { ISBN10: null, ISBN13: null };
 	let scannedPageCount = 0;
 
-	try {
-		for await (const pageText of extractPdfPages(filePath, true, signal)) {
-			const pageISBNs = extractISBNs(pageText);
-			scannedPageCount++;
-			isbnData.ISBN10 ??= pageISBNs.ISBN10;
-			isbnData.ISBN13 ??= pageISBNs.ISBN13;
+	// Let read failures reach the scanner so they remain retryable.
+	for await (const pageText of extractPdfPages(filePath, true, signal)) {
+		const pageISBNs = extractISBNs(pageText);
+		scannedPageCount++;
+		isbnData.ISBN10 ??= pageISBNs.ISBN10;
+		isbnData.ISBN13 ??= pageISBNs.ISBN13;
 
-			if (isbnData.ISBN13) break;
-		}
-	} catch (err) {
-		throwIfAborted(signal);
-		const message = err instanceof Error ? err.message : String(err);
-		console.error(`Failed to extract text from ${filePath}: ${message}`);
+		if (isbnData.ISBN13) break;
 	}
 
 	console.info(`Scanned ${scannedPageCount} pages for ISBNs.`);
