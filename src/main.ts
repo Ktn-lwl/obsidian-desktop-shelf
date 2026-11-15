@@ -16,9 +16,17 @@ export default class DesktopLibrary extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		this.addSettingTab(new DesktopLibrarySettingTab(this.app, this));
-
 		this.library = new LibraryService(this);
+		try {
+			await this.library.importCatalog();
+			this.catalogImported = true;
+		} catch (error) {
+			new Notice('Could not load shared library settings. Refresh to retry.');
+			console.error('Failed to import library on startup', error);
+		}
+		const settingsTab = new DesktopLibrarySettingTab(this.app, this);
+		this.addSettingTab(settingsTab);
+		this.register(settingsTab.watchFolderChanges());
 
 		this.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, this));
 		const openLibrary = () => {
@@ -109,7 +117,7 @@ export default class DesktopLibrary extends Plugin {
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
-			DEFAULT_SETTINGS,
+			{ ...DEFAULT_SETTINGS, watchedFolders: [] },
 			(await this.loadData()) as Partial<DesktopLibrarySettings>,
 		);
 	}

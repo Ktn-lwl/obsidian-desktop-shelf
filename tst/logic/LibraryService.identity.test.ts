@@ -111,7 +111,7 @@ describe('ISBN catalog identity', () => {
 		const pathB = join(rootB, 'copy.pdf');
 		await writeFile(pathA, 'cached');
 		await writeFile(pathB, 'cached');
-		const initial = new LibraryService(plugin());
+		const initial = new LibraryService(plugin([rootA, rootB]));
 		add(initial, copy(pathA, true));
 		add(initial, copy(pathB));
 		await initial.exportCatalog();

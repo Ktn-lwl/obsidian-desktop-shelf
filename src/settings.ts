@@ -1,4 +1,4 @@
-import { App, PluginSettingTab } from 'obsidian';
+import { App, Notice, PluginSettingTab } from 'obsidian';
 import type { SettingDefinitionItem } from 'obsidian';
 import MyPlugin from './main';
 import { AddFolderModal } from './components/AddFolderModal';
@@ -24,7 +24,18 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	watchFolderChanges(): () => void {
+		let previous = JSON.stringify(this.plugin.settings.watchedFolders);
+		return this.plugin.library.subscribe(() => {
+			const current = JSON.stringify(this.plugin.settings.watchedFolders);
+			if (current === previous) return;
+			previous = current;
+			this.update();
+		});
+	}
+
 	getSettingDefinitions(): SettingDefinitionItem[] {
+		const watchedFolders = [...this.plugin.settings.watchedFolders];
 		return [
 			{
 				name: 'Online book lookup',
@@ -44,11 +55,14 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 					action: () => this.openAddFolderModal(),
 				},
 				onDelete: (idx: number) => {
-					void this.removeFolder(idx).catch((error) => {
+					const folder = watchedFolders[idx];
+					if (folder === undefined) return;
+					void this.removeFolder(folder).catch((error) => {
+						new Notice('Could not save watched folders. Try again.');
 						console.error('Failed to remove watched folder', error);
 					});
 				},
-				items: this.plugin.settings.watchedFolders.map((folder) => ({
+				items: watchedFolders.map((folder) => ({
 					name: folder,
 					searchable: false,
 				})),
@@ -70,20 +84,21 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 
 	openAddFolderModal() {
 		const modal = new AddFolderModal(this.app, (folderPath): void => {
-			void this.addFolder(folderPath);
+			void this.addFolder(folderPath).catch((error) => {
+				new Notice('Could not save watched folders. Try again.');
+				console.error('Failed to add watched folder', error);
+			});
 		});
 		modal.open();
 	}
 
 	async addFolder(folderPath: string): Promise<void> {
-		this.plugin.settings.watchedFolders.push(folderPath);
-		await this.plugin.saveData(this.plugin.settings);
+		await this.plugin.library.setWatchedFolder(folderPath, true);
 		this.update();
 	}
 
-	private async removeFolder(index: number): Promise<void> {
-		this.plugin.settings.watchedFolders.splice(index, 1);
-		await this.plugin.saveData(this.plugin.settings);
+	private async removeFolder(folder: string): Promise<void> {
+		await this.plugin.library.setWatchedFolder(folder, false);
 		this.update();
 	}
 }

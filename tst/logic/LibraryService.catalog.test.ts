@@ -128,7 +128,7 @@ describe('LibraryService catalog persistence', () => {
 		testDirectory = await mkdtemp(join(tmpdir(), 'desktop-shelf-catalog-'));
 		const root = join(testDirectory, 'unavailable-books');
 		const filepath = join(root, 'retained.pdf');
-		const initial = new LibraryService(makePlugin());
+		const initial = new LibraryService(makePlugin([root]));
 		addBook(initial, filepath, 'Old title', true);
 		await initial.exportCatalog();
 		const service = new LibraryService(makePlugin([root]));
@@ -144,7 +144,7 @@ describe('LibraryService catalog persistence', () => {
 	it('does not export the catalog when cancelled during metadata updates', async () => {
 		testDirectory = await mkdtemp(join(tmpdir(), 'desktop-shelf-catalog-'));
 		const root = join(testDirectory, 'unavailable-books');
-		const initial = new LibraryService(makePlugin());
+		const initial = new LibraryService(makePlugin([root]));
 		addBook(initial, join(root, 'retained.pdf'), 'Local title', true);
 		await initial.exportCatalog();
 		const before = await readCatalog();
@@ -166,7 +166,7 @@ describe('LibraryService catalog persistence', () => {
 		testDirectory = await mkdtemp(join(tmpdir(), 'desktop-shelf-catalog-'));
 		const root = join(testDirectory, 'unavailable-books');
 		const filepath = join(root, 'retained.pdf');
-		const initial = new LibraryService(makePlugin());
+		const initial = new LibraryService(makePlugin([root]));
 		addBook(initial, filepath, 'Retained book');
 		await initial.exportCatalog();
 
