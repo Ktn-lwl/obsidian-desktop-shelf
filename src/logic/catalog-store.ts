@@ -2,6 +2,7 @@ import { mkdir, open, writeFile, readFile, rename, unlink } from 'node:fs/promis
 import type { CatalogFile } from '../model/catalog';
 import { delay, throwIfAborted } from '../utils/cancellation';
 import { normalizeCatalog } from './manual-state';
+import { catalogWatchedFolders } from './catalog-settings';
 
 const CATALOG_LOCK_TIMEOUT_MS = 15_000;
 const CATALOG_LOCK_RETRY_MS = 100;
@@ -57,6 +58,7 @@ export class CatalogStore {
 			throw new Error(`Catalog has an invalid format: ${this.plugin.catalogPath}`);
 		}
 		const catalog = parsed as CatalogFile;
+		catalogWatchedFolders(catalog);
 		normalizeCatalog(catalog);
 		return catalog;
 	}

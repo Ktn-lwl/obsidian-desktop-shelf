@@ -10,6 +10,7 @@ export interface ManualState {
 }
 
 export interface CatalogFile {
+	settings?: { watchedFolders: string[] };
 	lastUpdated: number; // ms since epoch
 	data: Record<string, BookProps>; // keyed by normalized ISBN; legacy unidentified records use paths
 	// Scan results awaiting explicit inclusion; never part of the library shelf.

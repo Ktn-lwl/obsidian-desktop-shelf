@@ -21,7 +21,10 @@ describe('LibraryService view integration', () => {
 					},
 				}),
 			);
-			const service = new LibraryService({ catalogPath } as DesktopLibrary);
+			const service = new LibraryService({
+				catalogPath,
+				settings: { watchedFolders: [] },
+			} as unknown as DesktopLibrary);
 			const listener = vi.fn();
 			const unsubscribe = service.subscribe(listener);
 			await service.importCatalog();
@@ -82,7 +85,10 @@ describe('LibraryService view integration', () => {
 		try {
 			const catalogPath = join(directory, 'Catalog.json');
 			await writeFile(catalogPath, 'not json');
-			const service = new LibraryService({ catalogPath } as DesktopLibrary);
+			const service = new LibraryService({
+				catalogPath,
+				settings: { watchedFolders: [] },
+			} as unknown as DesktopLibrary);
 			await expect(service.importCatalog()).rejects.toThrow();
 		} finally {
 			await rm(directory, { recursive: true, force: true });

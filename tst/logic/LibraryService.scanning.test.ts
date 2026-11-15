@@ -61,6 +61,7 @@ describe('incremental library scans', () => {
 		const scannerPlugin = plugin();
 		scannerPlugin.settings.watchedFolders = [folder, offline];
 		const service = new LibraryService(scannerPlugin);
+		await service.setWatchedFolder(archive, false);
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		await service.updateCatalog();
 		const after = JSON.parse(await readFile(plugin().catalogPath, 'utf8')) as CatalogFile;

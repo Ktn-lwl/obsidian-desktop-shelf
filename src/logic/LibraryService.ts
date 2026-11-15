@@ -6,6 +6,7 @@ import { scanLibrary, isPathWithinFolder } from './scan-library';
 import { throwIfAborted } from '../utils/cancellation';
 import { bookIdentity, groupBooks } from './books/book-identity';
 import { CatalogStore } from './catalog-store';
+import { catalogWatchedFolders, ensureCatalogSettings } from './catalog-settings';
 import { LibraryEdits, type EditHost } from './library-edits';
 import { applyIdentification, catalogFiles, displayBooks, emptyManualState } from './manual-state';
 
@@ -88,11 +89,29 @@ export class LibraryService {
 		return result;
 	}
 	private adopt(catalog: CatalogFile): void {
+		const folders = catalogWatchedFolders(catalog);
+		if (folders) this.plugin.settings.watchedFolders = folders;
 		this.catalog = catalogFiles(catalog);
 		this.manual = catalog.manual ?? emptyManualState();
 		this.scans = catalog.scans ?? {};
 		this.lastUpdated = catalog.lastUpdated;
 		this.notify(true);
+	}
+
+	setWatchedFolder(path: string, watched: boolean): Promise<void> {
+		return this.enqueue(async () => {
+			const saved = await this.store.update((catalog) => {
+				const settings = ensureCatalogSettings(
+					catalog,
+					this.plugin.settings.watchedFolders,
+				);
+				const folders = new Set(settings.watchedFolders);
+				if (watched) folders.add(path);
+				else folders.delete(path);
+				settings.watchedFolders = [...folders];
+			});
+			this.adopt(saved);
+		});
 	}
 
 	updateCatalog(signal?: AbortSignal): Promise<void> {
@@ -167,6 +186,11 @@ export class LibraryService {
 		const saved = await this.store.update((disk) => {
 			const manual = disk.manual ?? this.manual;
 			const diskBooks = catalogFiles(disk);
+			// A fresh vault cannot supply the missing folder configuration of a populated
+			// legacy catalog. Leave it unset until a vault with the original list refreshes.
+			if (disk.settings || this.plugin.settings.watchedFolders.length || !diskBooks.size) {
+				ensureCatalogSettings(disk, this.plugin.settings.watchedFolders);
+			}
 			const merged = new Map<string, Book>();
 			for (const [path, book] of diskBooks) {
 				if (!folders.some((folder) => isPathWithinFolder(folder, path)))
@@ -219,7 +243,12 @@ export class LibraryService {
 	}
 	importCatalog(): Promise<void> {
 		return this.enqueue(async () => {
-			const saved = await this.store.read();
+			let saved = await this.store.read();
+			if (saved?.settings === undefined && this.plugin.settings.watchedFolders.length) {
+				saved = await this.store.update((catalog) => {
+					ensureCatalogSettings(catalog, this.plugin.settings.watchedFolders);
+				});
+			}
 			if (saved) this.adopt(saved);
 		});
 	}
