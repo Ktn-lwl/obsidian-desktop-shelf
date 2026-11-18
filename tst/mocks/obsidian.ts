@@ -208,6 +208,9 @@ export class ButtonComponent {
 	setCta(): this {
 		return this;
 	}
+	setDestructive(): this {
+		return this;
+	}
 	setButtonText(text: string) {
 		this.buttonText = text;
 		this.buttonEl.innerText = text;

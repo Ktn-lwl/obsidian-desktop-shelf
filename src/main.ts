@@ -11,6 +11,8 @@ export default class DesktopLibrary extends Plugin {
 	private catalogImported = false;
 	private refreshPromise: Promise<void> | undefined;
 	private unloaded = false;
+	// Keep scans, catalog locks, and cover writes on one location until reload.
+	private activeSaveDirectory?: string;
 	private readonly refreshController = new AbortController();
 
 	async onload() {
@@ -82,6 +84,7 @@ export default class DesktopLibrary extends Plugin {
 	}
 
 	refreshLibrary(): Promise<void> {
+		if (this.library.isClearing) return Promise.resolve();
 		if (this.refreshPromise) return this.refreshPromise;
 		if (this.unloaded) return Promise.resolve();
 		this.refreshError = undefined;
@@ -120,6 +123,7 @@ export default class DesktopLibrary extends Plugin {
 			{ ...DEFAULT_SETTINGS, watchedFolders: [] },
 			(await this.loadData()) as Partial<DesktopLibrarySettings>,
 		);
+		this.activeSaveDirectory = this.settings.saveDirectory;
 	}
 
 	async saveSettings() {
@@ -127,7 +131,10 @@ export default class DesktopLibrary extends Plugin {
 	}
 
 	get catalogDir(): string {
-		return join(this.settings.saveDirectory, '.obsidian-desktop-shelf');
+		return join(
+			this.activeSaveDirectory ?? this.settings.saveDirectory,
+			'.obsidian-desktop-shelf',
+		);
 	}
 
 	get catalogPath(): string {

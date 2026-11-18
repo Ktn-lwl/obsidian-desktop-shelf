@@ -1,7 +1,45 @@
 import { describe, expect, it, vi } from 'vitest';
 import { App } from 'obsidian';
+import { join } from 'node:path';
 import type DesktopLibrary from '../src/main';
 import { DEFAULT_SETTINGS, DesktopLibrarySettingTab } from '../src/settings';
+
+describe('save directory', () => {
+	it('persists the selected directory and refreshes the displayed path', async () => {
+		const saveSettings = vi.fn(async () => {});
+		const plugin = {
+			settings: { ...DEFAULT_SETTINGS },
+			saveSettings,
+		} as unknown as DesktopLibrary;
+		const tab = new DesktopLibrarySettingTab(new App(), plugin);
+		const update = vi.fn();
+		tab.update = update;
+		await tab.setSaveDirectory('/new-library');
+		expect(plugin.settings.saveDirectory).toBe('/new-library');
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(update).toHaveBeenCalledOnce();
+		const directorySetting = tab
+			.getSettingDefinitions()
+			.find((definition) => 'name' in definition && definition.name === 'Save directory');
+		expect(directorySetting).toHaveProperty(
+			'desc',
+			expect.stringContaining(join('/new-library', '.obsidian-desktop-shelf')),
+		);
+	});
+
+	it('retains the previous directory if saving fails', async () => {
+		const plugin = {
+			settings: { ...DEFAULT_SETTINGS, saveDirectory: '/original' },
+			saveSettings: vi.fn().mockRejectedValue(new Error('Disk full')),
+		} as unknown as DesktopLibrary;
+		const tab = new DesktopLibrarySettingTab(new App(), plugin);
+		const update = vi.fn();
+		tab.update = update;
+		await expect(tab.setSaveDirectory('/new-library')).rejects.toThrow('Disk full');
+		expect(plugin.settings.saveDirectory).toBe('/original');
+		expect(update).not.toHaveBeenCalled();
+	});
+});
 
 describe('online lookup consent', () => {
 	it('defaults to offline and persists an explicit opt-in and opt-out', async () => {
