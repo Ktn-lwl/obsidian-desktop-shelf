@@ -9,6 +9,9 @@ import { CatalogStore } from './catalog-store';
 import { catalogWatchedFolders, ensureCatalogSettings } from './catalog-settings';
 import { LibraryEdits, type EditHost } from './library-edits';
 import { applyIdentification, catalogFiles, displayBooks, emptyManualState } from './manual-state';
+import { waitForPreviews } from '../utils/preview-queue';
+
+const EMPTY_BOOKS: ReadonlyArray<Readonly<BookProps>> = Object.freeze([]);
 
 export class LibraryService {
 	private readonly plugin: MyPlugin;
@@ -25,8 +28,14 @@ export class LibraryService {
 	private operation: Promise<unknown> = Promise.resolve();
 	private snapshot?: ReadonlyArray<Readonly<BookProps>>;
 	private filesSnapshot?: ReadonlyArray<Readonly<BookProps>>;
+	private clearPromise?: Promise<void>;
+
+	get isClearing(): boolean {
+		return this.clearPromise !== undefined;
+	}
 
 	get books(): ReadonlyArray<Readonly<BookProps>> {
+		if (this.isClearing) return EMPTY_BOOKS;
 		return (this.snapshot ??= Object.freeze(displayBooks(this.catalog, this.manual)));
 	}
 
@@ -114,7 +123,35 @@ export class LibraryService {
 		});
 	}
 
+	clearLibrary(): Promise<void> {
+		if (this.clearPromise) return this.clearPromise;
+		this.clearPromise = this.enqueue(async () => {
+			this.reportStatus('Clearing library…');
+			// Folder settings normally live in the catalog. Retain them locally first.
+			await this.plugin.saveSettings();
+			// Empty shelves unload their cards and abort preview generation.
+			await waitForPreviews();
+			await this.store.clear();
+			this.problems = [];
+			this.adopt({ lastUpdated: 0, data: {} });
+		}).then(
+			() => {
+				this.clearPromise = undefined;
+				this.plugin.refreshError = undefined;
+				this.reportStatus('Library cleared');
+			},
+			(error: unknown) => {
+				this.clearPromise = undefined;
+				this.reportStatus('Could not clear library');
+				throw error;
+			},
+		);
+		this.notify(true);
+		return this.clearPromise;
+	}
+
 	updateCatalog(signal?: AbortSignal): Promise<void> {
+		if (this.clearPromise) return this.clearPromise;
 		return this.enqueue(() => this.scanCatalog(signal));
 	}
 	private async scanCatalog(signal?: AbortSignal): Promise<void> {

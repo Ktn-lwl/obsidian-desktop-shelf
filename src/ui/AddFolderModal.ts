@@ -10,31 +10,66 @@ import {
 } from 'obsidian';
 import { homedir } from 'node:os';
 
+interface FolderModalOptions {
+	title?: string;
+	description?: string;
+	pathDescription?: string;
+	submitText?: string;
+	initialPath?: string;
+}
+
 export class AddFolderModal extends Modal {
 	folderPath: string = '';
 	suggestionModal: FolderSuggestions;
-	onSubmit: (result: string) => void;
+	onSubmit: (result: string) => void | Promise<void>;
+	private submitting = false;
 
-	constructor(app: App, onSubmit: (result: string) => void) {
+	constructor(
+		app: App,
+		onSubmit: (result: string) => void | Promise<void>,
+		options: FolderModalOptions = {},
+	) {
 		super(app);
 		this.onSubmit = onSubmit;
+		this.folderPath = options.initialPath ?? '';
 		this.modalEl.addClass('desktop-shelf-folder-modal');
 		this.contentEl.addClass('desktop-shelf-folder');
-		this.setTitle('Add a folder');
+		this.setTitle(options.title ?? 'Add a folder');
 		this.contentEl.createEl('p', {
 			cls: 'desktop-shelf-folder-description',
-			text: 'Watch a local folder for books. Files stay in their original location.',
+			text:
+				options.description ??
+				'Watch a local folder for books. Files stay in their original location.',
 		});
 
 		let submitButton!: ButtonComponent;
 		let textBox!: TextComponent;
 
+		const submit = async () => {
+			if (this.submitButtonIsDisabled()) return;
+			this.submitting = true;
+			submitButton.setDisabled(true);
+			try {
+				await this.submit();
+			} catch (error) {
+				new Notice('Could not save folder. Try again.');
+				console.error('Failed to save folder', error);
+			} finally {
+				this.submitting = false;
+				submitButton.setDisabled(this.submitButtonIsDisabled());
+			}
+		};
+
 		//TODO: Case insensitivity
 		new Setting(this.contentEl)
 			.setClass('desktop-shelf-folder-path')
 			.setName('Folder path')
-			.setDesc('Subfolders are scanned automatically. Start typing to see matching folders.')
+			.setDesc(
+				options.pathDescription ??
+					'Subfolders are scanned automatically. Start typing to see matching folders.',
+			)
 			.addText((txt) => {
+				txt.setValue(this.folderPath);
 				txt.onChange((value: string) => {
 					this.folderPath = value.trim();
 					submitButton.setDisabled(this.submitButtonIsDisabled());
@@ -43,10 +78,7 @@ export class AddFolderModal extends Modal {
 				txt.inputEl.addEventListener('keydown', (_evt: KeyboardEvent) => {
 					if (_evt.key === 'Enter' && !this.submitButtonIsDisabled()) {
 						_evt.preventDefault();
-						this.submit().catch((error) => {
-							new Notice(`Failed to add folder.`);
-							console.error(error);
-						});
+						void submit();
 					}
 				});
 
@@ -60,9 +92,9 @@ export class AddFolderModal extends Modal {
 			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
 			.addButton((btn) => {
 				submitButton = btn
-					.setButtonText('Add folder')
+					.setButtonText(options.submitText ?? 'Add folder')
 					.setCta()
-					.onClick(() => this.submit())
+					.onClick(submit)
 					.setDisabled(this.submitButtonIsDisabled());
 			});
 
@@ -71,16 +103,17 @@ export class AddFolderModal extends Modal {
 	}
 
 	private async submit() {
-		if (await this.folderExists(this.folderPath)) {
-			this.onSubmit(this.folderPath);
+		const folderPath = this.folderPath;
+		if (await this.folderExists(folderPath)) {
+			await this.onSubmit(folderPath);
 			this.close();
 		} else {
-			new Notice(`directory: ${this.folderPath} not found`);
+			new Notice(`directory: ${folderPath} not found`);
 		}
 	}
 
 	private submitButtonIsDisabled() {
-		return this.folderPath === '';
+		return this.submitting || this.folderPath === '';
 	}
 
 	private async folderExists(path: string) {

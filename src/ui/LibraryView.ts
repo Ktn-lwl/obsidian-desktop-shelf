@@ -138,7 +138,8 @@ export class LibraryView extends ItemView {
 		this.addBooksButton.setText(`Add books (${library.edits.candidates.length})`);
 		const books = changed ? selectBooks(allBooks, this.query, this.sort) : undefined;
 		if (books) this.visibleCount = books.length;
-		this.refreshButton.disabled = this.plugin.isRefreshing;
+		this.refreshButton.disabled = this.plugin.isRefreshing || library.isClearing;
+		this.addBooksButton.disabled = library.isClearing;
 		this.refreshButton.setText(this.plugin.isRefreshing ? 'Refreshing…' : 'Refresh');
 		this.status.setText(`${this.visibleCount} of ${allBooks.length} books · ${library.status}`);
 		const expanded = this.issues.querySelector('details')?.open ?? false;

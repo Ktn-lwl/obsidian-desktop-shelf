@@ -4,9 +4,9 @@ import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promis
 import { extname, isAbsolute, join } from 'node:path';
 import type { BookProps } from '../logic/books/book';
 import { throwIfAborted } from '../utils/cancellation';
+import { enqueuePreview } from '../utils/preview-queue';
 
 // Render one visible book at a time, avoiding multiple large PDFs in memory.
-let queue: Promise<unknown> = Promise.resolve();
 
 export function loadPdfPreview(
 	book: Pick<BookProps, 'filepath' | 'filepaths'>,
@@ -14,7 +14,7 @@ export function loadPdfPreview(
 	signal: AbortSignal,
 	document: Document,
 ): Promise<Uint8Array<ArrayBuffer> | undefined> {
-	const result = queue.then(async () => {
+	return enqueuePreview(async () => {
 		for (const filepath of new Set([book.filepath, ...(book.filepaths ?? [])])) {
 			if (signal.aborted) return;
 			try {
@@ -51,8 +51,6 @@ export function loadPdfPreview(
 		}
 		return undefined;
 	});
-	queue = result.catch(() => {});
-	return result;
 }
 
 async function renderFirstPage(

@@ -51,6 +51,32 @@ afterEach(async () => {
 	await rm(directory, { recursive: true, force: true });
 });
 describe('plugin startup', () => {
+	it('keeps active storage paths until reload, then loads the selected catalog', async () => {
+		const plugin = new DesktopLibrary({} as App, {} as PluginManifest);
+		await plugin.onload();
+		const next = join(directory, 'next');
+		const nextCatalogDir = join(next, '.obsidian-desktop-shelf');
+		await mkdir(nextCatalogDir, { recursive: true });
+		await writeFile(
+			join(nextCatalogDir, 'Catalog.json'),
+			JSON.stringify({
+				lastUpdated: 1,
+				data: {},
+				settings: { watchedFolders: ['/next/books'] },
+			}),
+		);
+		plugin.settings.saveDirectory = next;
+		expect(plugin.catalogPath).toBe(catalogPath);
+		expect(plugin.imagesDir).toBe(join(directory, '.obsidian-desktop-shelf', 'covers'));
+		plugin.onunload();
+		state.local = { ...state.local, saveDirectory: next };
+		const reloaded = new DesktopLibrary({} as App, {} as PluginManifest);
+		await reloaded.onload();
+		expect(reloaded.catalogDir).toBe(nextCatalogDir);
+		expect(reloaded.settings.watchedFolders).toEqual(['/next/books']);
+		reloaded.onunload();
+	});
+
 	it('loads shared folders before registering settings, without waiting for layout or scanning', async () => {
 		await writeFile(
 			catalogPath,

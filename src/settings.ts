@@ -1,8 +1,10 @@
 import { App, Notice, PluginSettingTab } from 'obsidian';
 import type { SettingDefinitionItem } from 'obsidian';
 import MyPlugin from './main';
-import { AddFolderModal } from './components/AddFolderModal';
+import { AddFolderModal } from './ui/AddFolderModal';
+import { ClearLibraryModal } from './ui/ClearLibraryModal';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export interface DesktopLibrarySettings {
 	watchedFolders: Array<string>;
@@ -67,6 +69,17 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 					searchable: false,
 				})),
 			},
+			{
+				name: 'Save directory',
+				desc: `Library data is stored in ${join(this.plugin.settings.saveDirectory, '.obsidian-desktop-shelf')}. Select to change; reload Obsidian to apply.`,
+				action: () => this.openSaveDirectoryModal(),
+			},
+			{
+				name: 'Clear library',
+				desc: 'Delete the active catalog and cached images. Your PDFs and watched folders are kept. Requires confirmation.',
+				action: () => new ClearLibraryModal(this.app, this.plugin).open(),
+				disabled: () => this.plugin.library.isClearing,
+			},
 		];
 	}
 
@@ -90,6 +103,37 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 			});
 		});
 		modal.open();
+	}
+
+	openSaveDirectoryModal() {
+		new AddFolderModal(
+			this.app,
+			async (folderPath) => {
+				await this.setSaveDirectory(folderPath);
+				new Notice('Save directory updated. Reload Obsidian to apply.');
+			},
+			{
+				title: 'Select save directory',
+				description:
+					'Store the catalog and covers in .obsidian-desktop-shelf inside this folder. Existing data is not moved. To keep your library, copy that subfolder to the new location before reloading Obsidian.',
+				pathDescription:
+					'Select an existing local folder. Start typing to see matching folders.',
+				submitText: 'Save directory',
+				initialPath: this.plugin.settings.saveDirectory,
+			},
+		).open();
+	}
+
+	async setSaveDirectory(folderPath: string): Promise<void> {
+		const previous = this.plugin.settings.saveDirectory;
+		this.plugin.settings.saveDirectory = folderPath;
+		try {
+			await this.plugin.saveSettings();
+		} catch (error) {
+			this.plugin.settings.saveDirectory = previous;
+			throw error;
+		}
+		this.update();
 	}
 
 	async addFolder(folderPath: string): Promise<void> {

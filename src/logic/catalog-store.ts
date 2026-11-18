@@ -1,4 +1,5 @@
-import { mkdir, open, writeFile, readFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, open, writeFile, readFile, rename, unlink, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { CatalogFile } from '../model/catalog';
 import { delay, throwIfAborted } from '../utils/cancellation';
 import { normalizeCatalog } from './manual-state';
@@ -11,6 +12,17 @@ let temporaryFileCounter = 0;
 /** All writers reread and modify the latest catalog while holding the same lock. */
 export class CatalogStore {
 	constructor(private readonly plugin: { catalogDir: string; catalogPath: string }) {}
+
+	async clear(): Promise<void> {
+		await mkdir(this.plugin.catalogDir, { recursive: true });
+		await this.withLock(async () => {
+			await rm(join(this.plugin.catalogDir, 'covers'), { recursive: true, force: true });
+			await unlink(this.plugin.catalogPath).catch((error: NodeJS.ErrnoException) => {
+				if (error.code !== 'ENOENT') throw error;
+			});
+		});
+	}
+
 	async update(
 		change: (catalog: CatalogFile) => void | Promise<void>,
 		signal?: AbortSignal,

@@ -3,7 +3,7 @@ import type { Mock } from 'vitest';
 import { readdir, stat } from 'node:fs/promises';
 import type { Dirent, Stats } from 'node:fs';
 
-import { AddFolderModal } from '../../src/components/AddFolderModal';
+import { AddFolderModal } from '../../src/ui/AddFolderModal';
 import {
 	App,
 	ButtonComponent,
@@ -62,6 +62,49 @@ beforeEach(() => {
 });
 
 describe('AddFolderModal', () => {
+	it('prefills a save directory and waits for persistence before closing', async () => {
+		mockStat.mockResolvedValue({ isDirectory: () => true } as Stats);
+		let finish!: () => void;
+		const onSubmit = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const modal = new AddFolderModal(new App(), onSubmit, {
+			title: 'Select save directory',
+			initialPath: '/library',
+			submitText: 'Save directory',
+		});
+		expect(lastText().getValue()).toBe('/library');
+		expect(lastButton().disabled).toBe(false);
+		lastButton().click();
+		await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith('/library'));
+		expect(lastButton().disabled).toBe(true);
+		expect(spyMethod(modal, 'close')).not.toHaveBeenCalled();
+		finish();
+		await vi.waitFor(() => expect(spyMethod(modal, 'close')).toHaveBeenCalledOnce());
+	});
+
+	it('keeps the picker open and permits retry when persistence fails', async () => {
+		mockStat.mockResolvedValue({ isDirectory: () => true } as Stats);
+		const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const modal = new AddFolderModal(
+			new App(),
+			vi.fn().mockRejectedValue(new Error('Disk full')),
+			{
+				initialPath: '/library',
+			},
+		);
+		lastButton().click();
+		await vi.waitFor(() =>
+			expect(Notice).toHaveBeenCalledWith('Could not save folder. Try again.'),
+		);
+		expect(spyMethod(modal, 'close')).not.toHaveBeenCalled();
+		expect(lastButton().disabled).toBe(false);
+		log.mockRestore();
+	});
+
 	it('starts with the submit button disabled', () => {
 		new AddFolderModal(new App(), vi.fn());
 		expect(lastButton().disabled).toBe(true);
