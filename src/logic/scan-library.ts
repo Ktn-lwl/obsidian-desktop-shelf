@@ -5,6 +5,7 @@ import { Book } from './books/book';
 import { createBook, getPDFPaths } from './books/directory-crawler';
 import { applyIdentification } from './manual-state';
 import { throwIfAborted } from '../utils/cancellation';
+import { isAbsoluteFolderPath } from '../utils/folder-path';
 
 export async function scanLibrary(
 	catalog: Map<string, Book>,
@@ -22,6 +23,10 @@ export async function scanLibrary(
 
 	for (const folder of folders) {
 		throwIfAborted(signal);
+		if (!isAbsoluteFolderPath(folder)) {
+			problems.push(`Replace this watched folder with its full path in settings: ${folder}`);
+			continue;
+		}
 		try {
 			for await (const filepath of getPDFPaths(folder, signal)) {
 				throwIfAborted(signal);
@@ -76,6 +81,7 @@ export async function scanLibrary(
 }
 
 export function isPathWithinFolder(folder: string, filepath: string): boolean {
+	if (!isAbsoluteFolderPath(folder) || !isAbsoluteFolderPath(filepath)) return false;
 	const pathFromFolder = relative(folder, filepath);
 	return (
 		pathFromFolder !== '..' &&

@@ -29,10 +29,4 @@ export default defineConfig(
 		},
 	},
 	...obsidianmd.configs.recommended,
-	{
-		files: ['src/logic/books/isbn-extractor.ts'],
-		rules: {
-			'obsidianmd/rule-custom-message': 'off',
-		},
-	},
 );

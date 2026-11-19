@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { LibraryView, LIBRARY_VIEW_TYPE } from './ui/LibraryView';
 import { migratePdfTabs } from './ui/native-pdf';
 import { LibraryService } from './logic/LibraryService';
+import { isAbsoluteFolderPath } from './utils/folder-path';
 
 export default class DesktopLibrary extends Plugin {
 	settings!: DesktopLibrarySettings;
@@ -33,19 +34,26 @@ export default class DesktopLibrary extends Plugin {
 		this.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, this));
 		const openLibrary = () => {
 			void this.openLibrary().catch((error) => {
-				new Notice('Could not open My Library.');
+				new Notice('Could not open the library.');
 				console.error(error);
 			});
 		};
-		this.addRibbonIcon('library', 'Open My Library', openLibrary);
-		this.addCommand({ id: 'open-library', name: 'Open My Library', callback: openLibrary });
+		this.addRibbonIcon('library', 'Open library', openLibrary);
+		this.addCommand({ id: 'open-library', name: 'Open library', callback: openLibrary });
 		// Preserve existing opening command IDs for saved hotkeys.
-		for (const id of ['open-modal-simple', 'open-modal-complex']) {
-			this.addCommand({ id, name: 'Open My Library (legacy)', callback: openLibrary });
-		}
+		this.addCommand({
+			id: 'open-modal-simple',
+			name: 'Open library (legacy simple modal)',
+			callback: openLibrary,
+		});
+		this.addCommand({
+			id: 'open-modal-complex',
+			name: 'Open library (legacy complex modal)',
+			callback: openLibrary,
+		});
 		this.addCommand({
 			id: 'refresh-library',
-			name: 'Refresh Library',
+			name: 'Refresh library',
 			callback: () => this.refreshLibrary(),
 		});
 		const status = this.addStatusBarItem();
@@ -95,7 +103,7 @@ export default class DesktopLibrary extends Plugin {
 				this.refreshError =
 					error instanceof Error ? error.message : 'Library refresh failed';
 				this.library.reportStatus('Refresh failed');
-				new Notice('Library refresh failed. Open My Library for details.');
+				new Notice('Library refresh failed. Open the library for details.');
 				console.error('Failed to refresh library', error);
 			})
 			.finally(() => {
@@ -130,7 +138,16 @@ export default class DesktopLibrary extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	get hasValidSaveDirectory(): boolean {
+		return isAbsoluteFolderPath(this.activeSaveDirectory ?? this.settings.saveDirectory);
+	}
+
 	get catalogDir(): string {
+		if (!this.hasValidSaveDirectory) {
+			throw new Error(
+				'Select an absolute save directory in Desktop Shelf settings, then reload.',
+			);
+		}
 		return join(
 			this.activeSaveDirectory ?? this.settings.saveDirectory,
 			'.obsidian-desktop-shelf',

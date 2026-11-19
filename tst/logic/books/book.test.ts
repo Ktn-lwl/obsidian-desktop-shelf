@@ -2,6 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { Book, BookProps, MetadataUpdateStatus } from '../../../src/logic/books/book';
 
 describe('Book catalog records', () => {
+	it('isolates stored metadata and file paths from inputs and snapshots', () => {
+		const filepaths = ['/books/example.pdf'];
+		const props: BookProps = {
+			filepath: filepaths[0]!,
+			filepaths,
+			title: 'Example',
+			author: 'Unknown',
+		};
+		const book = new Book(props);
+
+		props.title = 'Changed input';
+		filepaths.push('/books/another.pdf');
+		const snapshot = book.props;
+		snapshot.title = 'Changed snapshot';
+
+		expect(book.props.title).toBe('Example');
+		expect(book.props.filepaths).toEqual(['/books/example.pdf']);
+		expect(Object.isFrozen(snapshot.filepaths)).toBe(true);
+
+		book.update({ title: 'Updated book', authors: [] });
+		expect(snapshot.title).toBe('Changed snapshot');
+		expect(book.props.title).toBe('Updated book');
+	});
+
 	it('rehydrates metadata status and last-attempt time from JSON', () => {
 		const props: BookProps = {
 			filepath: '/books/example.pdf',

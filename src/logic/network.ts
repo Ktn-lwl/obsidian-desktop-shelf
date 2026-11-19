@@ -1,5 +1,5 @@
 import type MyPlugin from '../main';
-import { ISBN10, ISBN13 } from '../model/isbn';
+import { assertISBN, type ISBN10, type ISBN13 } from '../model/isbn';
 import { BookMetadata } from '../model/metadata';
 import type { OpenLibrarySearchResponse } from '../model/open-library-requests';
 import { requestUrl } from 'obsidian';
@@ -30,6 +30,7 @@ export class EgressClient {
 		signal?: AbortSignal,
 	): Promise<string | undefined> {
 		this.checkNetworkAccess(signal);
+		assertISBN(isbn);
 		for (const extension of IMAGE_EXTENSIONS) {
 			const cachedImage = join(this.plugin.imagesDir, `${isbn}${extension}`);
 			if (await this.exists(cachedImage)) {
@@ -107,6 +108,7 @@ export class EgressClient {
 		signal?: AbortSignal,
 	): Promise<BookMetadata | undefined> {
 		this.checkNetworkAccess(signal);
+		assertISBN(isbn);
 		return enqueueOpenLibraryRequest(async () => {
 			this.checkNetworkAccess(signal);
 			const params = new URLSearchParams({

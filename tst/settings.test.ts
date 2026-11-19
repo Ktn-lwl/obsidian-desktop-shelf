@@ -5,6 +5,18 @@ import type DesktopLibrary from '../src/main';
 import { DEFAULT_SETTINGS, DesktopLibrarySettingTab } from '../src/settings';
 
 describe('save directory', () => {
+	it('rejects a relative save directory before changing settings', async () => {
+		const saveSettings = vi.fn();
+		const plugin = {
+			settings: { ...DEFAULT_SETTINGS },
+			saveSettings,
+		} as unknown as DesktopLibrary;
+		const tab = new DesktopLibrarySettingTab(new App(), plugin);
+		await expect(tab.setSaveDirectory('.')).rejects.toThrow('absolute folder path');
+		expect(plugin.settings.saveDirectory).toBe(DEFAULT_SETTINGS.saveDirectory);
+		expect(saveSettings).not.toHaveBeenCalled();
+	});
+
 	it('persists the selected directory and refreshes the displayed path', async () => {
 		const saveSettings = vi.fn(async () => {});
 		const plugin = {

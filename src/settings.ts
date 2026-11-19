@@ -5,6 +5,7 @@ import { AddFolderModal } from './ui/AddFolderModal';
 import { ClearLibraryModal } from './ui/ClearLibraryModal';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { isAbsoluteFolderPath } from './utils/folder-path';
 
 export interface DesktopLibrarySettings {
 	watchedFolders: Array<string>;
@@ -71,14 +72,17 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 			},
 			{
 				name: 'Save directory',
-				desc: `Library data is stored in ${join(this.plugin.settings.saveDirectory, '.obsidian-desktop-shelf')}. Select to change; reload Obsidian to apply.`,
+				desc: isAbsoluteFolderPath(this.plugin.settings.saveDirectory)
+					? `Library data is stored in ${join(this.plugin.settings.saveDirectory, '.obsidian-desktop-shelf')}. Select to change; reload Obsidian to apply.`
+					: 'Select the full path to your existing library folder, then reload Obsidian.',
 				action: () => this.openSaveDirectoryModal(),
 			},
 			{
 				name: 'Clear library',
 				desc: 'Delete the active catalog and cached images. Your PDFs and watched folders are kept. Requires confirmation.',
 				action: () => new ClearLibraryModal(this.app, this.plugin).open(),
-				disabled: () => this.plugin.library.isClearing,
+				disabled: () =>
+					!this.plugin.hasValidSaveDirectory || this.plugin.library.isClearing,
 			},
 		];
 	}
@@ -96,12 +100,7 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 	}
 
 	openAddFolderModal() {
-		const modal = new AddFolderModal(this.app, (folderPath): void => {
-			void this.addFolder(folderPath).catch((error) => {
-				new Notice('Could not save watched folders. Try again.');
-				console.error('Failed to add watched folder', error);
-			});
-		});
+		const modal = new AddFolderModal(this.app, (folderPath) => this.addFolder(folderPath));
 		modal.open();
 	}
 
@@ -117,7 +116,7 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 				description:
 					'Store the catalog and covers in .obsidian-desktop-shelf inside this folder. Existing data is not moved. To keep your library, copy that subfolder to the new location before reloading Obsidian.',
 				pathDescription:
-					'Select an existing local folder. Start typing to see matching folders.',
+					'Enter the full path to an existing folder. Start typing to see matching folders.',
 				submitText: 'Save directory',
 				initialPath: this.plugin.settings.saveDirectory,
 			},
@@ -125,6 +124,7 @@ export class DesktopLibrarySettingTab extends PluginSettingTab {
 	}
 
 	async setSaveDirectory(folderPath: string): Promise<void> {
+		if (!isAbsoluteFolderPath(folderPath)) throw new Error('Enter an absolute folder path.');
 		const previous = this.plugin.settings.saveDirectory;
 		this.plugin.settings.saveDirectory = folderPath;
 		try {

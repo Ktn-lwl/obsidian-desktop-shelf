@@ -4,8 +4,87 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type DesktopLibrary from '../../src/main';
 import { LibraryService } from '../../src/logic/LibraryService';
+import { MetadataUpdateStatus } from '../../src/logic/books/book';
+import { parseManualISBN } from '../../src/logic/manual-state';
 
 describe('LibraryService view integration', () => {
+	it.each([false, true])(
+		'publishes metadata together while retaining progress updates (cancel: %s)',
+		async (cancel) => {
+			const directory = await mkdtemp(join(tmpdir(), 'shelf-ui-'));
+			try {
+				const catalogPath = join(directory, 'Catalog.json');
+				const data = Object.fromEntries(
+					['9780132350884', '9780262033848', '9780999999998'].map((isbn, index) => {
+						const filepath = join(directory, `${index}.pdf`);
+						return [
+							filepath,
+							{
+								filepath,
+								title: `Local ${index}`,
+								author: 'Unknown',
+								lastUpdateAttempt: 1,
+								...parseManualISBN(isbn),
+							},
+						];
+					}),
+				);
+				const pendingPath = join(directory, 'unidentified.pdf');
+				await writeFile(
+					catalogPath,
+					JSON.stringify({
+						lastUpdated: 1,
+						data,
+						pendingFiles: {
+							[pendingPath]: { filepath: pendingPath, title: 'Unidentified' },
+						},
+					}),
+				);
+				const service = new LibraryService({
+					catalogPath,
+					catalogDir: directory,
+					settings: { watchedFolders: [], onlineLookupEnabled: true },
+				} as unknown as DesktopLibrary);
+				const controller = new AbortController();
+				let completed = 0;
+				vi.spyOn(service, 'updateBook').mockImplementation(async (book) => {
+					if (cancel && completed === 1) {
+						controller.abort();
+						throw new DOMException('Cancelled', 'AbortError');
+					}
+					book.Title = `Fetched ${completed++}`;
+					book.MetaDataUpdateStatus = MetadataUpdateStatus.SUCCESS;
+					book.LastUpdateAttempt = Date.now();
+				});
+				const snapshots: (typeof service.books)[] = [];
+				const candidates: (typeof service.edits.candidates)[] = [];
+				const progress: string[] = [];
+				service.subscribe(() => {
+					if (!service.status.startsWith('Looking up books')) return;
+					progress.push(service.status);
+					snapshots.push(service.books);
+					candidates.push(service.edits.candidates);
+				});
+				const refresh = service.updateCatalog(controller.signal);
+				if (cancel) await expect(refresh).rejects.toMatchObject({ name: 'AbortError' });
+				else await refresh;
+				expect(new Set(progress).size).toBe(cancel ? 2 : 3);
+				expect(snapshots).toHaveLength(cancel ? 3 : 4);
+				// The final notification may still carry the last lookup status.
+				expect(new Set(snapshots.slice(0, -1)).size).toBe(1);
+				expect(new Set(candidates.slice(0, -1)).size).toBe(1);
+				expect(
+					service.books.filter((book) => book.title.startsWith('Fetched')),
+				).toHaveLength(cancel ? 1 : 3);
+				expect(service.books).not.toBe(snapshots[0]);
+				expect(snapshots[0]?.every((book) => book.title.startsWith('Local'))).toBe(true);
+			} finally {
+				vi.restoreAllMocks();
+				await rm(directory, { recursive: true, force: true });
+			}
+		},
+	);
+
 	it('publishes imported snapshots, isolates them from mutations, and unsubscribes', async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'shelf-ui-'));
 		try {

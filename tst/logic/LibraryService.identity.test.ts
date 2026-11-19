@@ -8,6 +8,7 @@ import { assertISBN10, assertISBN13 } from '../../src/model';
 import { Book, MetadataUpdateStatus } from '../../src/logic/books/book';
 import { bookIdentity } from '../../src/logic/books/book-identity';
 import { LibraryService } from '../../src/logic/LibraryService';
+import { EgressClient } from '../../src/logic/network';
 
 const isbn10 = (() => {
 	const value = '0132350882';
@@ -54,6 +55,31 @@ afterEach(async () => {
 });
 
 describe('ISBN catalog identity', () => {
+	it('looks up only valid identifiers when refreshing a legacy catalog', async () => {
+		const onlinePlugin = plugin();
+		onlinePlugin.settings.onlineLookupEnabled = true;
+		const fallback = copy(join(directory, 'fallback.pdf')).props;
+		const invalid = copy(join(directory, 'unknown.pdf')).props;
+		await writeFile(
+			onlinePlugin.catalogPath,
+			JSON.stringify({
+				lastUpdated: 1,
+				data: {
+					[fallback.filepath]: { ...fallback, isbn13: 42, isbn10: '0-8044-2957-x' },
+					[invalid.filepath]: { ...invalid, isbn13: '4006381333931' },
+				},
+			}),
+		);
+		const lookup = vi
+			.spyOn(EgressClient.prototype, 'fetchMetadata')
+			.mockResolvedValue(undefined);
+		const service = new LibraryService(onlinePlugin);
+		await service.importCatalog();
+		await service.updateCatalog();
+		expect(lookup).toHaveBeenCalledExactlyOnceWith('080442957X', undefined);
+		expect(service.books.map((book) => book.filepath)).toEqual([fallback.filepath]);
+		expect(service.edits.candidates.map((book) => book.filepath)).toEqual([invalid.filepath]);
+	});
 	it('normalizes ISBN-10 to ISBN-13 but keeps other editions and invalid identifiers separate', () => {
 		expect(bookIdentity(copy('/a.pdf', true).props)).toBe(`isbn:${isbn13}`);
 		expect(bookIdentity(copy('/b.pdf').props)).toBe(`isbn:${isbn13}`);

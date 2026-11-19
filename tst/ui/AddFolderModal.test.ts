@@ -152,6 +152,19 @@ describe('AddFolderModal', () => {
 		expect(mockStat).not.toHaveBeenCalled();
 	});
 
+	it.each(['.', '../books', 'books/archive', 'C:books'])(
+		'rejects relative folder %s before checking the filesystem',
+		(path) => {
+			const onSubmit = vi.fn();
+			new AddFolderModal(new App(), onSubmit);
+			lastText().simulateInput(path);
+			lastText().inputEl.dispatchEvent(keyboardEvent('Enter'));
+			expect(lastButton().disabled).toBe(true);
+			expect(mockStat).not.toHaveBeenCalled();
+			expect(onSubmit).not.toHaveBeenCalled();
+		},
+	);
+
 	it('shows a Notice and does not submit when the path does not exist', async () => {
 		mockStat.mockRejectedValue(new Error('ENOENT'));
 		const onSubmit = vi.fn();
@@ -208,7 +221,7 @@ describe('FolderSuggestions (via AddFolderModal.suggestionModal)', () => {
 		const modal = new AddFolderModal(new App(), vi.fn());
 		const results = await suggestionsOf(modal).getSuggestions('/Users/');
 
-		expect(mockReaddir).toHaveBeenCalledWith('/Users', { withFileTypes: true });
+		expect(mockReaddir).toHaveBeenCalledWith('/Users/', { withFileTypes: true });
 		expect(results).toEqual(['/Users/Documents', '/Users/Downloads']);
 	});
 
@@ -222,23 +235,24 @@ describe('FolderSuggestions (via AddFolderModal.suggestionModal)', () => {
 		const modal = new AddFolderModal(new App(), vi.fn());
 		const results = await suggestionsOf(modal).getSuggestions('/Users/Do');
 
-		expect(mockReaddir).toHaveBeenCalledWith('/Users', { withFileTypes: true });
+		expect(mockReaddir).toHaveBeenCalledWith('/Users/', { withFileTypes: true });
 		expect(results.sort()).toEqual(['/Users/Documents', '/Users/Downloads']);
 	});
 
-	// This one documents what looks like an actual bug rather than a
-	// deliberate design choice — see the note in the accompanying message.
-	it('BUG: ignores typed text as a filter until a "/" has been typed at least once', async () => {
+	it.each([
+		['Us', ['/Users']],
+		['/Us', ['/Users']],
+		['Missing', []],
+		['', ['/Users', '/Applications']],
+		['/', ['/Users', '/Applications']],
+	])('filters root directories for query "%s"', async (query, expected) => {
 		mockReaddir.mockResolvedValue([dirent('Users', true), dirent('Applications', true)]);
 
 		const modal = new AddFolderModal(new App(), vi.fn());
-		const results = await suggestionsOf(modal).getSuggestions('Us');
+		const results = await suggestionsOf(modal).getSuggestions(query);
 
-		// Intuitively this should only return ['/Users'] — instead it
-		// returns everything under '/', because searchTerm falls back to
-		// '' whenever the query has no '/' in it yet.
 		expect(mockReaddir).toHaveBeenCalledWith('/', { withFileTypes: true });
-		expect(results.sort()).toEqual(['/Applications', '/Users']);
+		expect(results).toEqual(expected);
 	});
 
 	it('returns an empty list when the directory cannot be read', async () => {
@@ -250,15 +264,16 @@ describe('FolderSuggestions (via AddFolderModal.suggestionModal)', () => {
 		expect(results).toEqual([]);
 	});
 
-	it('fuzzyFilter does prefix matching, case-sensitively', async () => {
-		const modal = new AddFolderModal(new App(), vi.fn());
-		const results = await modal.suggestionModal.fuzzyFilter('Do', [
-			'Documents',
-			'Downloads',
-			'documents-backup',
-			'Desktop',
+	it('matches folder prefixes case-sensitively', async () => {
+		mockReaddir.mockResolvedValue([
+			dirent('Documents', true),
+			dirent('Downloads', true),
+			dirent('documents-backup', true),
+			dirent('Desktop', true),
 		]);
-		expect(results).toEqual(['Documents', 'Downloads']);
+		const modal = new AddFolderModal(new App(), vi.fn());
+		const results = await suggestionsOf(modal).getSuggestions('/Users/Do');
+		expect(results).toEqual(['/Users/Documents', '/Users/Downloads']);
 	});
 
 	it('selectSuggestion fills in the text box with a trailing slash and re-triggers onChange', () => {

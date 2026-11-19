@@ -41,7 +41,7 @@ export class LibraryView extends ItemView {
 		return LIBRARY_VIEW_TYPE;
 	}
 	getDisplayText(): string {
-		return 'My Library';
+		return 'My library';
 	}
 	getIcon(): string {
 		return 'library';
@@ -50,7 +50,7 @@ export class LibraryView extends ItemView {
 	async onOpen(): Promise<void> {
 		this.contentEl.empty();
 		this.contentEl.addClass('desktop-shelf');
-		this.contentEl.createEl('h2', { text: 'My Library' });
+		this.contentEl.createEl('h2', { text: 'My library' });
 		const toolbar = this.contentEl.createDiv({ cls: 'desktop-shelf-toolbar' });
 		const search = toolbar.createEl('input', {
 			type: 'search',

@@ -10,6 +10,7 @@ import { catalogWatchedFolders, ensureCatalogSettings } from './catalog-settings
 import { LibraryEdits, type EditHost } from './library-edits';
 import { applyIdentification, catalogFiles, displayBooks, emptyManualState } from './manual-state';
 import { waitForPreviews } from '../utils/preview-queue';
+import { isAbsoluteFolderPath } from '../utils/folder-path';
 
 const EMPTY_BOOKS: ReadonlyArray<Readonly<BookProps>> = Object.freeze([]);
 
@@ -109,6 +110,8 @@ export class LibraryService {
 
 	setWatchedFolder(path: string, watched: boolean): Promise<void> {
 		return this.enqueue(async () => {
+			if (watched && !isAbsoluteFolderPath(path))
+				throw new Error('Enter an absolute folder path.');
 			const saved = await this.store.update((catalog) => {
 				const settings = ensureCatalogSettings(
 					catalog,
@@ -177,32 +180,38 @@ export class LibraryService {
 
 		const pending = Array.from(this.pendingBooks());
 		let completed = 0;
-		for (const book of pending) {
-			if (this.plugin.settings.onlineLookupEnabled) {
-				this.reportStatus(`Looking up books · ${++completed} of ${pending.length}`);
-			}
-			try {
-				throwIfAborted(signal);
-				await this.updateBook(book, signal);
-				for (const filepath of book.props.filepaths ?? [book.Filepath]) {
-					this.catalog.set(
-						filepath,
-						new Book({ ...book.props, filepath, filepaths: undefined }),
-					);
+		let metadataChanged = false;
+		try {
+			for (const book of pending) {
+				if (this.plugin.settings.onlineLookupEnabled) {
+					this.reportStatus(`Looking up books · ${++completed} of ${pending.length}`);
 				}
-				if (
-					this.plugin.settings.onlineLookupEnabled &&
-					(book.props.metaDataStatus === MetadataUpdateStatus.FAILED ||
-						book.props.metaDataStatus === MetadataUpdateStatus.PARTIAL)
-				) {
+				try {
+					throwIfAborted(signal);
+					await this.updateBook(book, signal);
+					for (const filepath of book.props.filepaths ?? [book.Filepath]) {
+						this.catalog.set(
+							filepath,
+							new Book({ ...book.props, filepath, filepaths: undefined }),
+						);
+					}
+					if (
+						this.plugin.settings.onlineLookupEnabled &&
+						(book.props.metaDataStatus === MetadataUpdateStatus.FAILED ||
+							book.props.metaDataStatus === MetadataUpdateStatus.PARTIAL)
+					) {
+						this.problems.push(`Could not finish online lookup: ${book.Title}`);
+					}
+					if (this.plugin.settings.onlineLookupEnabled) metadataChanged = true;
+				} catch (err) {
+					throwIfAborted(signal);
 					this.problems.push(`Could not finish online lookup: ${book.Title}`);
+					console.error(`Failed to update metadata for ${book.Filepath}: `, err);
 				}
-				if (this.plugin.settings.onlineLookupEnabled) this.notify(true);
-			} catch (err) {
-				throwIfAborted(signal);
-				this.problems.push(`Could not finish online lookup: ${book.Title}`);
-				console.error(`Failed to update metadata for ${book.Filepath}: `, err);
 			}
+		} finally {
+			// Reuse snapshots during progress updates; publish completed lookups even on cancellation.
+			if (metadataChanged) this.notify(true);
 		}
 		throwIfAborted(signal);
 		this.reportStatus('Saving library…');

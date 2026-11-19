@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type DesktopLibrary from '../../src/main';
 import { EgressClient } from '../../src/logic/network';
-import { assertISBN13 } from '../../src/model/isbn';
+import { assertISBN13, type ISBN13 } from '../../src/model/isbn';
 
 const ISBN_VALUE = '9780999999998';
 let imagesDir: string;
@@ -49,6 +49,21 @@ describe('EgressClient image downloads', () => {
 	afterEach(async () => {
 		await rm(imagesDir, { recursive: true, force: true });
 	});
+
+	it.each(['unidentified', '9780306406158', '4006381333931'])(
+		'rejects invalid ISBN %s before metadata requests or cover cache access',
+		async (value) => {
+			const client = new EgressClient(makePlugin());
+			const isbn = value as ISBN13;
+			// A cache hit must go through the same validation as a download.
+			await writeFile(join(imagesDir, `${isbn}.jpg`), 'cached');
+			await expect(client.fetchMetadata(isbn)).rejects.toThrow('Invalid ISBN');
+			await expect(client.downloadImage('https://covers.example/book', isbn)).rejects.toThrow(
+				'Invalid ISBN',
+			);
+			expect(requestUrl).not.toHaveBeenCalled();
+		},
+	);
 
 	it('allows concurrent downloads of the same cover without sharing temporary files', async () => {
 		vi.mocked(requestUrl).mockResolvedValue(makeImageResponse('image/jpeg'));

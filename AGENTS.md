@@ -114,7 +114,7 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 - Default to local/offline operation. Only make network requests when essential to the feature.
 - No hidden telemetry. If you collect optional analytics or call third-party services, require explicit opt-in and document clearly in `README.md` and in settings.
 - Never execute remote code, fetch and eval scripts, or auto-update plugin code outside of normal releases.
-- Minimize scope: read/write only what's necessary inside the vault. Do not access files outside the vault.
+- Desktop Shelf reads PDFs from configured watched folders and opens books from the shared catalog. Limit external writes to the plugin’s `.obsidian-desktop-shelf` directory in the configured storage location (the home folder by default). Keep source PDFs untouched.
 - Clearly disclose any external services used, data sent, and risks.
 - Respect user privacy. Do not collect vault contents, filenames, or personal information unless absolutely necessary and explicitly consented.
 - Avoid deceptive patterns, ads, or spammy notifications.
