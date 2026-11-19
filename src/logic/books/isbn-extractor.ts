@@ -28,25 +28,15 @@ interface PdfJsApi {
 }
 
 async function discoverISBNs(filePath: string, signal?: AbortSignal) {
-	console.log(`Discovering ISBNs for file at: ${filePath}`);
 	const isbnData: ISBNData = { ISBN10: null, ISBN13: null };
-	let scannedPageCount = 0;
 
 	// Let read failures reach the scanner so they remain retryable.
 	for await (const pageText of extractPdfPages(filePath, true, signal)) {
 		const pageISBNs = extractISBNs(pageText);
-		scannedPageCount++;
 		isbnData.ISBN10 ??= pageISBNs.ISBN10;
 		isbnData.ISBN13 ??= pageISBNs.ISBN13;
 
 		if (isbnData.ISBN13) break;
-	}
-
-	console.info(`Scanned ${scannedPageCount} pages for ISBNs.`);
-	if (isbnData.ISBN10 || isbnData.ISBN13) {
-		console.log(`Successfully extracted ISBNs for file at ${filePath}`);
-	} else {
-		console.log(`Failed to extract ISBNs for file at ${filePath}`);
 	}
 
 	return isbnData;
