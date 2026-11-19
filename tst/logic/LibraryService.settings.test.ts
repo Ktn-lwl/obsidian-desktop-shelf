@@ -27,6 +27,26 @@ afterEach(async () => {
 });
 
 describe('catalog folder settings', () => {
+	it('rejects new relative roots and allows removing a legacy relative root after refresh', async () => {
+		const p = plugin();
+		const service = new LibraryService(p);
+		await expect(service.setWatchedFolder('books', true)).rejects.toThrow(
+			'absolute folder path',
+		);
+		await expect(readFile(p.catalogPath)).rejects.toMatchObject({ code: 'ENOENT' });
+		await writeFile(
+			p.catalogPath,
+			JSON.stringify({ lastUpdated: 1, data: {}, settings: { watchedFolders: ['.'] } }),
+		);
+		await service.updateCatalog();
+		expect(service.issues).toEqual([
+			'Replace this watched folder with its full path in settings: .',
+		]);
+		expect(service.edits.candidates).toHaveLength(0);
+		await service.setWatchedFolder('.', false);
+		expect((await disk()).settings?.watchedFolders).toEqual([]);
+	});
+
 	it('migrates legacy folders on refresh and loads them in a new vault', async () => {
 		const folder = join(directory, 'books');
 		await mkdir(folder);

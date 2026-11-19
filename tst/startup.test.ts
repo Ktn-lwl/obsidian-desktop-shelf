@@ -51,6 +51,14 @@ afterEach(async () => {
 	await rm(directory, { recursive: true, force: true });
 });
 describe('plugin startup', () => {
+	it('requires a new absolute save directory before accessing a legacy relative location', async () => {
+		state.local.saveDirectory = '.';
+		const plugin = new DesktopLibrary({} as App, {} as PluginManifest);
+		await plugin.loadSettings();
+		expect(plugin.hasValidSaveDirectory).toBe(false);
+		expect(() => plugin.catalogPath).toThrow('absolute save directory');
+	});
+
 	it('keeps active storage paths until reload, then loads the selected catalog', async () => {
 		const plugin = new DesktopLibrary({} as App, {} as PluginManifest);
 		await plugin.onload();

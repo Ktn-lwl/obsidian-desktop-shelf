@@ -9,6 +9,8 @@ import {
 	TextComponent,
 } from 'obsidian';
 import { homedir } from 'node:os';
+import { join, parse, sep } from 'node:path';
+import { isAbsoluteFolderPath } from '../utils/folder-path';
 
 interface FolderModalOptions {
 	title?: string;
@@ -60,13 +62,12 @@ export class AddFolderModal extends Modal {
 			}
 		};
 
-		//TODO: Case insensitivity
 		new Setting(this.contentEl)
 			.setClass('desktop-shelf-folder-path')
 			.setName('Folder path')
 			.setDesc(
 				options.pathDescription ??
-					'Subfolders are scanned automatically. Start typing to see matching folders.',
+					'Enter the full path to a folder. Its subfolders are scanned automatically.',
 			)
 			.addText((txt) => {
 				txt.setValue(this.folderPath);
@@ -82,7 +83,7 @@ export class AddFolderModal extends Modal {
 					}
 				});
 
-				txt.setPlaceholder(`${homedir().replaceAll('\\', '/')}/`);
+				txt.setPlaceholder(join(homedir(), sep));
 				txt.inputEl.ariaLabel = 'Folder path';
 				txt.inputEl.spellcheck = false;
 				textBox = txt;
@@ -113,7 +114,7 @@ export class AddFolderModal extends Modal {
 	}
 
 	private submitButtonIsDisabled() {
-		return this.submitting || this.folderPath === '';
+		return this.submitting || !isAbsoluteFolderPath(this.folderPath);
 	}
 
 	private async folderExists(path: string) {
@@ -140,10 +141,13 @@ class FolderSuggestions extends AbstractInputSuggest<string> {
 	}
 
 	protected async getSuggestions(query: string): Promise<string[]> {
-		// determine current root
-		const dirs = query.split('/');
-		const root = dirs.slice(0, -1).join('/') || '/';
-		const searchTerm = dirs.length > 1 ? dirs.last()! : '';
+		const localRoot = parse(homedir()).root;
+		const input = sep === '\\' ? query.replaceAll('/', sep) : query;
+		const lastSeparator = input.lastIndexOf(sep);
+		const searchTerm = input.slice(lastSeparator + 1);
+		// A bare prefix searches the local root without resolving it against the working directory.
+		const root = input.slice(0, lastSeparator + 1) || localRoot;
+		if (!isAbsoluteFolderPath(root)) return [];
 		let entries;
 
 		try {
@@ -152,11 +156,9 @@ class FolderSuggestions extends AbstractInputSuggest<string> {
 			return [];
 		}
 
-		const suggestions = entries.filter((item) => item.isDirectory()).map((item) => item.name);
-
-		return (await this.fuzzyFilter(searchTerm, suggestions)).map(
-			(item) => `${root}${root !== '/' ? '/' : ''}${item}`,
-		);
+		return entries
+			.filter((item) => item.isDirectory() && item.name.startsWith(searchTerm))
+			.map((item) => join(root, item.name));
 	}
 
 	renderSuggestion(folder: string, el: HTMLElement): void {
@@ -164,12 +166,7 @@ class FolderSuggestions extends AbstractInputSuggest<string> {
 	}
 
 	selectSuggestion(folder: string): void {
-		this.textBox.setValue(`${folder}/`);
+		this.textBox.setValue(join(folder, sep));
 		this.textBox.inputEl.dispatchEvent(new Event('input'));
-	}
-
-	//TODO: Uses basic string matching. Will switch to Levenshtein
-	async fuzzyFilter(query: string, candidates: string[]): Promise<string[]> {
-		return candidates.filter((text) => text.startsWith(query));
 	}
 }
