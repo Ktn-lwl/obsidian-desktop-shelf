@@ -1,4 +1,4 @@
-import { ISBN10, ISBN13 } from '../../model/isbn';
+import { type ISBN10, type ISBN13, normalizeISBN10, normalizeISBN13 } from '../../model/isbn';
 import { BookMetadata } from '../../model/metadata';
 
 export interface BookProps {
@@ -24,140 +24,87 @@ export enum MetadataUpdateStatus {
 }
 
 export class Book {
-	private readonly filepath: string;
-	private readonly filepaths?: readonly string[];
-	private title: string;
-	private author: string;
-	private isbn10?: ISBN10;
-	private isbn13?: ISBN13;
-	private publisher?: string;
-	private year?: number;
-	private coverImgSrc?: string;
-	private metaDataStatus?: MetadataUpdateStatus;
-	private lastUpdateAttempt?: number;
+	private readonly data: BookProps;
 
 	constructor(props: BookProps) {
-		this.filepath = props.filepath;
-		this.filepaths = props.filepaths && Object.freeze([...props.filepaths]);
-		this.title = props.title;
-		this.author = props.author;
-		this.isbn10 = props.isbn10;
-		this.isbn13 = props.isbn13;
-		this.publisher = props.publisher;
-		this.year = props.year;
-		this.coverImgSrc = props.coverImgSrc;
-		this.metaDataStatus = props.metaDataStatus ?? MetadataUpdateStatus.PENDING;
-		this.lastUpdateAttempt = props.lastUpdateAttempt ?? Date.now();
-	}
-
-	get props(): BookProps {
-		return {
-			filepath: this.filepath,
-			filepaths: this.filepaths,
-			title: this.title,
-			author: this.author,
-			isbn10: this.isbn10,
-			isbn13: this.isbn13,
-			publisher: this.publisher,
-			year: this.year,
-			coverImgSrc: this.coverImgSrc,
-			metaDataStatus: this.metaDataStatus,
-			lastUpdateAttempt: this.lastUpdateAttempt,
+		this.data = {
+			...props,
+			isbn10: normalizeISBN10(props.isbn10),
+			isbn13: normalizeISBN13(props.isbn13),
+			filepaths: props.filepaths && Object.freeze([...props.filepaths]),
+			metaDataStatus: props.metaDataStatus ?? MetadataUpdateStatus.PENDING,
+			lastUpdateAttempt: props.lastUpdateAttempt ?? Date.now(),
 		};
 	}
 
+	get props(): BookProps {
+		return { ...this.data };
+	}
+
 	set Title(title: string) {
-		this.title = title;
-	}
-
-	set Author(author: string) {
-		this.author = author;
-	}
-
-	set ISBN10(isbn10: ISBN10) {
-		this.isbn10 = isbn10;
-	}
-
-	set ISBN13(isbn13: ISBN13) {
-		this.isbn13 = isbn13;
-	}
-
-	set Publisher(publisher: string) {
-		this.publisher = publisher;
-	}
-
-	set Year(year: number) {
-		this.year = year;
+		this.data.title = title;
 	}
 
 	set CoverImgSrc(coverImgSrc: string) {
-		this.coverImgSrc = coverImgSrc;
+		this.data.coverImgSrc = coverImgSrc;
 	}
 
 	set MetaDataUpdateStatus(status: MetadataUpdateStatus) {
-		this.metaDataStatus = status;
+		this.data.metaDataStatus = status;
 	}
 
 	set LastUpdateAttempt(time: number) {
-		this.lastUpdateAttempt = time;
+		this.data.lastUpdateAttempt = time;
 	}
 
 	get Filepath(): string {
-		return this.filepath;
+		return this.data.filepath;
 	}
 
 	get Title(): string {
-		return this.title;
+		return this.data.title;
 	}
 
 	get Author(): string {
-		return this.author;
+		return this.data.author;
 	}
 
 	get ISBN10(): ISBN10 | undefined {
-		return this.isbn10;
+		return this.data.isbn10;
 	}
 
 	get ISBN13(): ISBN13 | undefined {
-		return this.isbn13;
-	}
-
-	get Publisher(): string | undefined {
-		return this.publisher;
+		return this.data.isbn13;
 	}
 
 	get Year(): number | undefined {
-		return this.year;
-	}
-
-	get CoverImgSrc(): string | undefined {
-		return this.coverImgSrc;
+		return this.data.year;
 	}
 
 	get canUpdate(): boolean {
 		return (
-			this.metaDataStatus === MetadataUpdateStatus.PENDING ||
-			this.metaDataStatus === MetadataUpdateStatus.PARTIAL ||
-			this.metaDataStatus === MetadataUpdateStatus.FAILED
+			this.data.metaDataStatus === MetadataUpdateStatus.PENDING ||
+			this.data.metaDataStatus === MetadataUpdateStatus.PARTIAL ||
+			this.data.metaDataStatus === MetadataUpdateStatus.FAILED
 		);
 	}
 
 	get LastUpdated(): number | undefined {
-		return this.lastUpdateAttempt;
+		return this.data.lastUpdateAttempt;
 	}
 
 	update(metadata: BookMetadata): void {
-		this.title = metadata.title;
+		this.data.title = metadata.title;
 		if (metadata.authors.length > 0) {
-			this.author = metadata.authors.join(', ');
+			this.data.author = metadata.authors.join(', ');
 		}
 
 		const year = metadata.publishedDate?.match(/^\d{4}/)?.[0];
-		if (year) this.year = Number(year);
-		if (metadata.publisher) this.publisher = metadata.publisher;
+		if (year) this.data.year = Number(year);
+		if (metadata.publisher) this.data.publisher = metadata.publisher;
 	}
 
 	hasISBN(): boolean {
-		return this.isbn10 !== undefined || this.isbn13 !== undefined;
+		return this.data.isbn10 !== undefined || this.data.isbn13 !== undefined;
 	}
 }
